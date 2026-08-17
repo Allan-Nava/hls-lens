@@ -3,6 +3,12 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.3.1] - 2026-08-17
+
+### Modificato
+
+- **Le sezioni di `BACKLOG.md` (cioè le milestone su GitHub) ora distinguono consegnato da pianificato**: una sezione consegnata prende il nome del tag che l'ha spedita (`v0.1.0 — Reading manifests`, `v0.2.0 — Backlog and roadmap automation`, `v0.3.0 — Publishing automation`, tutte chiuse), una pianificata prende il nome del tema (`Editor`, `Rules that pay for themselves`, …), e una voce si sposta dalla seconda alla prima quando esce. Il motivo è vincolante, non estetico: **una issue GitHub può avere una sola milestone**, quindi far coesistere "release" e "tema" nello stesso spazio di nomi significherebbe che il sync riassegna a ogni run ciò che si era messo a mano. Nessuna modifica al codice — gli id `HL-n` sono invariati e `docs/ROADMAP.md` è rigenerato.
+
 ## [0.3.0] - 2026-08-17
 
 Pubblicazione automatica: un tag `v*` pushato è tutto il processo di release, store inclusi.
@@ -58,6 +64,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.3.1]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.1.0

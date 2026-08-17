@@ -9,25 +9,42 @@ workflow](.github/workflows/backlog-sync.yml) makes GitHub a mirror of this file
 [`docs/ROADMAP.md`](docs/ROADMAP.md) is generated from it with `npm run roadmap`. Edit here, never
 there — the sync overwrites the issue, and CI fails if the roadmap is stale.
 
-Format, exactly: `- [ ] **HL-7 — Title**: description.` A `###` heading inside a milestone groups
-items by area and is carried through to the roadmap and the issue body.
+Sections come in two kinds, because a GitHub issue can hold **one** milestone and that milestone has
+to answer one question at a time:
 
-## v0.1 — Foundation
+- **Released** — named after the tag that shipped the work (`## v0.3.0 — Publishing automation`).
+  Every item is checked, so the sync closes the milestone. A release that only moves documentation
+  around does not open a section; the `CHANGELOG.md` is where every tag is accounted for.
+- **Planned** — named after the theme (`## Editor`). An item lives here until it ships, then it moves
+  into the section of the release that shipped it. Moving an item retitles nothing and reopens
+  nothing: the issue is anchored to its `HL-n` id and only changes milestone.
+
+Format, exactly: `- [ ] **HL-7 — Title**: description.` A `###` heading inside a section groups items
+by area and is carried through to the roadmap and the issue body.
+
+## v0.1.0 — Reading manifests
 
 Reading a manifest in the editor at all: the pure core, the diagnostics, the tree.
 
 - [x] **HL-0 — Reading HLS manifests in VS Code**: pure core (parser with line indexes, 33 rules, ladder model, URI resolution, segcheck bridge, fetcher), diagnostics, manifest tree, document links, URL fetching, deep check, generated rule reference, generated icon, full local test suite.
 
-## v0.2 — Plumbing
+## v0.2.0 — Backlog and roadmap automation
 
-The repository maintaining itself: what is tracked, what is documented and what is released should
-not depend on remembering to do it by hand.
+The plan maintaining itself: one file, two generated projections.
 
 - [x] **HL-17 — Backlog and roadmap automation**: `BACKLOG.md` parsed in the pure core (`src/core/backlog.ts`), `docs/ROADMAP.md` generated from it (`npm run roadmap`, no-op gate in CI), and the `backlog-sync` workflow making GitHub milestones and issues an idempotent mirror of the file, anchored on the `HL-n` ids.
+
+## v0.3.0 — Publishing automation
+
+A pushed `v*` tag as the whole release process, stores included.
+
 - [x] **HL-15 — Publish on tag**: `publish` job in `ci.yml` that on a `v*` tag uploads to the VS Code Marketplace (`vsce publish`) and to Open VSX (`ovsx publish`), publishing the exact `.vsix` the `release` job attached rather than repackaging it. Both publishers are pinned in the lockfile, the PATs live in the `marketplace` environment, and a missing PAT warns and skips instead of failing a tag that released correctly. Setting up `VSCE_PAT`/`OVSX_PAT` is an account action, not a repository one.
+
+## Docs and site
+
 - [ ] **HL-16 — Documentation site**: GitHub Pages from `docs/`, with the generated rule reference as its reference section and the roadmap as its plan (the sibling lenses already do this).
 
-## v0.3 — Rules that pay for themselves
+## Rules that pay for themselves
 
 Findings a stream engineer would otherwise catch by reading the manifest twice — all of them still
 computable from the declarations alone.
@@ -44,7 +61,7 @@ computable from the declarations alone.
 - [ ] **HL-5 — `media/key-rotation`**: report an `EXT-X-KEY` that never rotates across a long live window, and a `METHOD=NONE` after encrypted segments.
 - [ ] **HL-6 — `media/iframe-playlist-shape`**: an I-frame playlist without `EXT-X-I-FRAMES-ONLY`, or with segments that are not byte ranges.
 
-## v0.4 — Editor
+## Editor
 
 The spec where the manifest is, instead of in a browser tab.
 
@@ -52,7 +69,7 @@ The spec where the manifest is, instead of in a browser tab.
 - [ ] **HL-10 — Completion provider**: tag and attribute names, with the enumerated values (`YES`/`NO`, `VOD`/`EVENT`, `TYPE=`…).
 - [ ] **HL-11 — Quick fixes for the mechanical findings**: bump `EXT-X-VERSION` to what the playlist needs, append a missing `EXT-X-ENDLIST`, raise `EXT-X-TARGETDURATION` to the longest segment.
 
-## v0.5 — More than one file at a time
+## More than one file at a time
 
 Everything that needs the master and its variants together, or the same playlist over time.
 

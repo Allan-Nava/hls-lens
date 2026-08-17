@@ -48,8 +48,8 @@ From the Marketplace: search **HLS Lens**. Or build the `.vsix` yourself:
 
 ```bash
 npm install
-npm run package        # → hls-lens-0.3.0.vsix
-code --install-extension hls-lens-0.3.0.vsix
+npm run package        # → hls-lens-0.3.1.vsix
+code --install-extension hls-lens-0.3.1.vsix
 ```
 
 For the deep check, install segcheck (`brew install --cask allan-nava/tap/segcheck`, or a binary from [its releases](https://github.com/Allan-Nava/segcheck/releases)) and point `hlsLens.segcheck.path` at it if it is not on your `PATH`.
@@ -109,7 +109,7 @@ to Open VSX:
 
 ```bash
 # after the changelog entry and the version bump
-git tag -a v0.3.0 -m "Release 0.3.0" && git push origin main --follow-tags
+git tag -a v0.3.1 -m "Release 0.3.1" && git push origin main --follow-tags
 ```
 
 The two store credentials live in the `marketplace` environment, which is also where you can require
@@ -133,7 +133,11 @@ from it, so none of them can drift:
   is not what the backlog produces.
 - **GitHub milestones and issues** — the [`backlog-sync`](.github/workflows/backlog-sync.yml)
   workflow runs on every push that touches the backlog and makes the tracker a mirror of the file:
-  a `##` heading is a milestone, an item is an issue labelled `backlog`, `- [x]` closes it. Each
+  a `##` heading is a milestone, an item is an issue labelled `backlog`, `- [x]` closes it. A section
+  is named after a **release** once it has shipped (`v0.3.0 — Publishing automation`, closed) and
+  after a **theme** while it is planned (`Editor`); an item moves from the theme to the release that
+  shipped it, which is the only way to answer both questions with the single milestone an issue
+  has. Each
   issue is anchored to its stable id (`HL-7`) by a marker in the body, so renaming an item retitles
   its issue instead of opening a second one, and the whole thing is idempotent — it writes only what
   diverges. `workflow_dispatch` takes a `dry_run` input that reports what it would change.
