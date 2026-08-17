@@ -40,6 +40,14 @@ A pushed `v*` tag as the whole release process, stores included.
 
 - [x] **HL-15 — Publish on tag**: `publish` job in `ci.yml` that on a `v*` tag uploads to the VS Code Marketplace (`vsce publish`) and to Open VSX (`ovsx publish`), publishing the exact `.vsix` the `release` job attached rather than repackaging it. Both publishers are pinned in the lockfile, the PATs live in the `marketplace` environment, and a missing PAT warns and skips instead of failing a tag that released correctly. Setting up `VSCE_PAT`/`OVSX_PAT` is an account action, not a repository one.
 
+## v0.3.2 — Reproducible gates
+
+The first push turned the CI red on every run and left leftovers on the issue tracker: both
+were gates that assumed something the environment does not guarantee.
+
+- [x] **HL-18 — Icon gate compares pixels, not bytes**: `npm run icon:check` decodes the committed PNG and compares it with the generator's pixels, replacing the regenerate-and-diff step that failed on every CI run. DEFLATE output is not fixed by the PNG format, so the runner's zlib re-encodes the same image into different bytes and the byte diff reported a stale icon on a machine where nothing had changed.
+- [x] **HL-19 — Report milestones a rename left behind**: `orphanMilestones` in the core, wired into the sync, names the milestones that are empty and no longer in this file (five of them after the section restructure). It reports and never deletes, and it counts issues with the issues endpoint because GitHub does not recompute a milestone's own counters when an issue moves away from it.
+
 ## Docs and site
 
 - [ ] **HL-16 — Documentation site**: GitHub Pages from `docs/`, with the generated rule reference as its reference section and the roadmap as its plan (the sibling lenses already do this).

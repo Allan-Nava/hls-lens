@@ -3,6 +3,15 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.3.2] - 2026-08-17
+
+Il primo push ha fatto girare la CI per davvero, e due gate si sono rotti nel modo in cui si rompono i gate: assumendo qualcosa che l'ambiente non garantisce.
+
+### Corretto
+
+- **Il gate dell'icona confronta i pixel, non i byte** (HL-18): `npm run icon:check` decodifica il PNG committato (IHDR, IDAT inflate, filtro 0 per scanline) e lo confronta con i pixel del generatore, al posto dello step che rigenerava il file e ne faceva il `git diff`. **La CI falliva su ogni run**: l'output DEFLATE non è fissato dal formato PNG, quindi lo zlib del runner Linux ricomprime la stessa immagine in byte diversi da quelli scritti su macOS, e il diff sui byte segnalava un'icona stantia su una macchina dove non era cambiato niente. Il gate resta severo su quello che deve cogliere — un pixel modificato a mano, una dimensione diversa, un file che non viene dal generatore — e lo dice indicando il primo pixel che diverge.
+- **Il sync segnala le milestone lasciate indietro da una rinomina** (HL-19): `orphanMilestones` nel core (puro, testato) più il report nel job. Dopo la ristrutturazione delle sezioni ne erano rimaste **cinque** vuote sul tracker, ed erano invisibili. Segnala e non cancella mai: non può distinguere un residuo da una milestone aperta a mano. Il conteggio delle issue viene dall'endpoint `issues`, non dai contatori `open_issues`/`closed_issues` della milestone: **GitHub non li ricalcola** quando una issue cambia milestone, quindi la lista continuava a dichiarare piene proprio le milestone che questo sync aveva appena svuotato.
+
 ## [0.3.1] - 2026-08-17
 
 ### Modificato
@@ -64,6 +73,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.3.2]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.3.2
 [0.3.1]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.2.0

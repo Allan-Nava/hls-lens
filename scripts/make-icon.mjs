@@ -6,10 +6,19 @@
 // box-downsampled for antialiasing, then encoded as a PNG with zlib, which node
 // ships. The same mark is in media/icon.svg for the activity bar.
 //
-//   node scripts/make-icon.mjs
+//   node scripts/make-icon.mjs            write media/icon.png
+//   node scripts/make-icon.mjs --check    verify the committed PNG, write nothing
+//
+// --check compares the *pixels*, not the file bytes. DEFLATE output is not fixed by
+// the format: the same pixels encoded by a different zlib (macOS ships zlib, recent
+// node on Linux links zlib-ng) are a different, equally valid byte stream. Byte
+// comparison therefore fails in CI on a machine where nothing changed but the
+// compressor — which is what it did before this flag existed.
 import * as fs from 'fs';
 import * as path from 'path';
 import * as zlib from 'zlib';
+
+const CHECK = process.argv.includes('--check');
 
 const SIZE = 128; // what the Marketplace shows
 const SCALE = 4; // supersampling factor
@@ -161,8 +170,88 @@ function crc32(buf) {
   return (c ^ -1) >>> 0;
 }
 
-// The write happens last: the CRC table above is a top-level const, so calling the
-// encoder before this point would hit it before initialisation.
-fs.mkdirSync(path.join('media'), { recursive: true });
-fs.writeFileSync(path.join('media', 'icon.png'), encodePng(out, SIZE, SIZE));
-console.log(`wrote media/icon.png (${SIZE}×${SIZE})`);
+/**
+ * decodePixels reads back the RGBA bytes of a PNG this script wrote: signature,
+ * IHDR, the concatenated IDAT stream inflated, and one filter byte per scanline.
+ * It deliberately understands only what encodePng emits — 8-bit RGBA, no interlace,
+ * filter 0 — because anything else in media/icon.png means the file did not come
+ * from this generator, which is exactly what the check is there to catch.
+ */
+function decodePixels(png) {
+  const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  if (png.length < 8 || !png.subarray(0, 8).equals(SIGNATURE)) throw new Error('not a PNG');
+
+  let width = 0;
+  let height = 0;
+  const idat = [];
+  for (let at = 8; at + 8 <= png.length; ) {
+    const length = png.readUInt32BE(at);
+    const type = png.toString('ascii', at + 4, at + 8);
+    const data = png.subarray(at + 8, at + 8 + length);
+    if (type === 'IHDR') {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      if (data[8] !== 8 || data[9] !== 6) throw new Error(`expected 8-bit RGBA, got depth ${data[8]} colour type ${data[9]}`);
+      if (data[12] !== 0) throw new Error('interlaced PNG');
+    } else if (type === 'IDAT') {
+      idat.push(data);
+    } else if (type === 'IEND') {
+      break;
+    }
+    at += 12 + length; // length + type + data + CRC
+  }
+  if (!width || !height) throw new Error('no IHDR');
+
+  const raw = zlib.inflateSync(Buffer.concat(idat));
+  const stride = width * 4;
+  if (raw.length !== (stride + 1) * height) throw new Error(`unexpected raw size ${raw.length}`);
+  const rgba = Buffer.alloc(stride * height);
+  for (let y = 0; y < height; y++) {
+    const filter = raw[y * (stride + 1)];
+    if (filter !== 0) throw new Error(`scanline ${y} uses filter ${filter}; this generator writes 0`);
+    raw.copy(rgba, y * stride, y * (stride + 1) + 1, y * (stride + 1) + 1 + stride);
+  }
+  return { width, height, rgba };
+}
+
+// The write (or the check) happens last: the CRC table above is a top-level const, so
+// calling the encoder before this point would hit it before initialisation.
+const ICON = path.join('media', 'icon.png');
+
+if (CHECK) {
+  if (!fs.existsSync(ICON)) {
+    console.error(`::error::${ICON} is missing — run 'npm run icon' and commit the result`);
+    process.exit(1);
+  }
+  let decoded;
+  try {
+    decoded = decodePixels(fs.readFileSync(ICON));
+  } catch (err) {
+    console.error(`::error::${ICON} was not produced by scripts/make-icon.mjs (${err.message}) — run 'npm run icon' and commit the result`);
+    process.exit(1);
+  }
+  const expected = Buffer.from(out.buffer, out.byteOffset, out.byteLength);
+  if (decoded.width !== SIZE || decoded.height !== SIZE) {
+    console.error(`::error::${ICON} is ${decoded.width}×${decoded.height}, the generator draws ${SIZE}×${SIZE} — run 'npm run icon'`);
+    process.exit(1);
+  }
+  if (!decoded.rgba.equals(expected)) {
+    let differing = 0;
+    let firstPixel = -1;
+    for (let i = 0; i < expected.length; i += 4) {
+      if (decoded.rgba.compare(expected, i, i + 4, i, i + 4) !== 0) {
+        if (firstPixel < 0) firstPixel = i / 4;
+        differing++;
+      }
+    }
+    console.error(
+      `::error::${ICON} is stale — ${differing} pixel(s) differ from the generator, first at (${firstPixel % SIZE}, ${Math.floor(firstPixel / SIZE)}). Run 'npm run icon' and commit the result`,
+    );
+    process.exit(1);
+  }
+  console.log(`media/icon.png matches the generator (${SIZE}×${SIZE}, pixel for pixel)`);
+} else {
+  fs.mkdirSync(path.join('media'), { recursive: true });
+  fs.writeFileSync(ICON, encodePng(out, SIZE, SIZE));
+  console.log(`wrote media/icon.png (${SIZE}×${SIZE})`);
+}

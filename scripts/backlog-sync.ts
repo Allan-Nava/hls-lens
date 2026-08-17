@@ -29,6 +29,7 @@ import {
   duplicateIds,
   sectionState,
   backlogStats,
+  orphanMilestones,
   idFromBody,
   issueBody,
   issueTitle,
@@ -46,6 +47,8 @@ interface Milestone {
   title: string;
   state: string;
   description?: string | null;
+  open_issues?: number;
+  closed_issues?: number;
 }
 
 interface Issue {
@@ -145,6 +148,26 @@ async function syncMilestones(sections: BacklogSection[]): Promise<Map<string, n
 
     if (milestone?.number) numbers.set(section.title, milestone.number);
   }
+
+  // A renamed heading leaves its old milestone behind: report the empty leftovers so
+  // they do not pile up unnoticed, but never delete them — see orphanMilestones.
+  //
+  // The counts come from the issues endpoint rather than from open_issues/closed_issues
+  // on the milestone: GitHub does not recompute those counters when an issue is moved
+  // to another milestone, so the list endpoint keeps reporting a milestone as full long
+  // after this very sync emptied it — which would hide every leftover it creates.
+  const unknown = existing.filter((m) => !numbers.has(m.title));
+  const counted: Array<{ title: string; issues: number }> = [];
+  for (const milestone of unknown) {
+    const issues = await ghPaged<Issue>(`/repos/${OWNER}/${NAME}/issues?milestone=${milestone.number}&state=all`);
+    counted.push({ title: milestone.title, issues: issues.length });
+  }
+  for (const title of orphanMilestones(sections, counted)) {
+    console.log(
+      `! milestone "${title}" (#${byTitle.get(title)?.number}) is empty and no longer in ${FILE} — delete it by hand if a rename left it behind`,
+    );
+  }
+
   return numbers;
 }
 

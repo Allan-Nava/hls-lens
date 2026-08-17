@@ -2,7 +2,7 @@
   "name": "hls-lens",
   "displayName": "HLS Lens",
   "description": "Read HLS manifests in VS Code: inline diagnostics on m3u8 playlists, the bitrate ladder as a tree, and a deep segment check with segcheck.",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "allannava95",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -243,6 +243,7 @@
     "roadmap": "node esbuild.mjs --roadmap && node .build/gen-roadmap.mjs",
     "backlog:sync": "node esbuild.mjs --sync && node .build/backlog-sync.mjs",
     "icon": "node scripts/make-icon.mjs",
+    "icon:check": "node scripts/make-icon.mjs --check",
     "package": "vsce package --no-dependencies",
     "vscode:prepublish": "npm run build"
   },

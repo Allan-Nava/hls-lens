@@ -6,13 +6,14 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**3 of 18 items done** · `█░░░░░░░░░` 17%
+**5 of 20 items done** · `██░░░░░░░░` 25%
 
 | Milestone | State | Done |
 |---|---|---|
 | [v0.1.0 — Reading manifests](#v010--reading-manifests) | ✅ shipped | 1/1 |
 | [v0.2.0 — Backlog and roadmap automation](#v020--backlog-and-roadmap-automation) | ✅ shipped | 1/1 |
 | [v0.3.0 — Publishing automation](#v030--publishing-automation) | ✅ shipped | 1/1 |
+| [v0.3.2 — Reproducible gates](#v032--reproducible-gates) | ✅ shipped | 2/2 |
 | [Docs and site](#docs-and-site) | ⏳ planned | 0/1 |
 | [Rules that pay for themselves](#rules-that-pay-for-themselves) | ⏳ planned | 0/6 |
 | [Editor](#editor) | ⏳ planned | 0/3 |
@@ -42,6 +43,15 @@ A pushed `v*` tag as the whole release process, stores included.
 ✅ shipped · 1 of 1 · `██████████`
 
 - [x] **HL-15 — Publish on tag**: `publish` job in `ci.yml` that on a `v*` tag uploads to the VS Code Marketplace (`vsce publish`) and to Open VSX (`ovsx publish`), publishing the exact `.vsix` the `release` job attached rather than repackaging it. Both publishers are pinned in the lockfile, the PATs live in the `marketplace` environment, and a missing PAT warns and skips instead of failing a tag that released correctly. Setting up `VSCE_PAT`/`OVSX_PAT` is an account action, not a repository one.
+
+## v0.3.2 — Reproducible gates
+
+The first push turned the CI red on every run and left leftovers on the issue tracker: both were gates that assumed something the environment does not guarantee.
+
+✅ shipped · 2 of 2 · `██████████`
+
+- [x] **HL-18 — Icon gate compares pixels, not bytes**: `npm run icon:check` decodes the committed PNG and compares it with the generator's pixels, replacing the regenerate-and-diff step that failed on every CI run. DEFLATE output is not fixed by the PNG format, so the runner's zlib re-encodes the same image into different bytes and the byte diff reported a stale icon on a machine where nothing had changed.
+- [x] **HL-19 — Report milestones a rename left behind**: `orphanMilestones` in the core, wired into the sync, names the milestones that are empty and no longer in this file (five of them after the section restructure). It reports and never deletes, and it counts issues with the issues endpoint because GitHub does not recompute a milestone's own counters when an issue moves away from it.
 
 ## Docs and site
 

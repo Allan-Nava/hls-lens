@@ -28,6 +28,7 @@ import {
   idFromBody,
   issueTitle,
   issueBody,
+  orphanMilestones,
 } from '../src/core/backlog';
 
 let failures = 0;
@@ -707,6 +708,22 @@ async function main(): Promise<void> {
       assert.ok(item.title.length > 0, `${item.id} has a title`);
     }
     assert.strictEqual(items.find((i) => i.id === 'HL-0')?.done, true, 'v0.1 shipped');
+  });
+
+  await test('orphanMilestones reports the milestones a renamed section left behind', () => {
+    const sections = parseBacklog(sampleBacklog);
+    const onGitHub = [
+      { title: 'v0.1 — Foundation', issues: 1 }, // a current section, holding its issue
+      { title: 'v0.2 — Plumbing', issues: 0 }, // a current section with nothing in it yet
+      { title: 'v0.1 — Old Name', issues: 0 }, // what a renamed section left behind
+      { title: 'Roadmap 2027', issues: 0 }, // opened by hand, empty
+      { title: 'Editor', issues: 3 }, // not in the file, but holds issues
+    ];
+    // Reported only when the backlog no longer names it AND it holds nothing: a
+    // milestone with issues is somebody's working state, and this is a warning for a
+    // human to act on, never an automatic delete.
+    assert.deepStrictEqual(orphanMilestones(sections, onGitHub), ['v0.1 — Old Name', 'Roadmap 2027']);
+    assert.deepStrictEqual(orphanMilestones(sections, []), []);
   });
 
   await test('the issue mapping anchors on the id, not on the title', () => {

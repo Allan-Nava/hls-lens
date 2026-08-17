@@ -48,8 +48,8 @@ From the Marketplace: search **HLS Lens**. Or build the `.vsix` yourself:
 
 ```bash
 npm install
-npm run package        # → hls-lens-0.3.1.vsix
-code --install-extension hls-lens-0.3.1.vsix
+npm run package        # → hls-lens-0.3.2.vsix
+code --install-extension hls-lens-0.3.2.vsix
 ```
 
 For the deep check, install segcheck (`brew install --cask allan-nava/tap/segcheck`, or a binary from [its releases](https://github.com/Allan-Nava/segcheck/releases)) and point `hlsLens.segcheck.path` at it if it is not on your `PATH`.
@@ -97,6 +97,7 @@ npm run watch      # esbuild in watch mode, then F5 for the Extension Host
 npm test           # the core: parser, rules, ladder, URIs, segcheck bridge, fetcher
 npm run typecheck
 npm run docs       # regenerate docs/RULES.md from the catalogue (CI checks this)
+npm run icon:check # verify the committed icon against its generator, pixel for pixel
 npm run roadmap    # regenerate docs/ROADMAP.md from BACKLOG.md (CI checks this)
 ```
 
@@ -109,7 +110,7 @@ to Open VSX:
 
 ```bash
 # after the changelog entry and the version bump
-git tag -a v0.3.1 -m "Release 0.3.1" && git push origin main --follow-tags
+git tag -a v0.3.2 -m "Release 0.3.2" && git push origin main --follow-tags
 ```
 
 The two store credentials live in the `marketplace` environment, which is also where you can require

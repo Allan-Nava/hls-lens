@@ -45,15 +45,14 @@ jobs:
             git diff -- docs/ROADMAP.md
             exit 1
           fi
-      # The icon is generated too: a hand-edited PNG would silently diverge from
-      # the script that is supposed to produce it.
-      - name: Icon is up to date
-        run: |
-          npm run icon
-          if ! git diff --quiet -- media/icon.png; then
-            echo "::error::media/icon.png is stale — run 'npm run icon' and commit the result"
-            exit 1
-          fi
+      # The icon is generated too: a hand-edited PNG would silently diverge from the
+      # script that is supposed to produce it. The check compares pixels rather than
+      # regenerating and diffing the file, because DEFLATE output is not fixed by the
+      # PNG format — the runner's zlib emits a different (valid) byte stream for the
+      # same image than the one that wrote the committed file, so a byte diff fails on
+      # a machine where nothing changed but the compressor.
+      - name: Icon matches its generator
+        run: npm run icon:check
       - name: Package the extension
         run: npx @vscode/vsce package --no-dependencies --out hls-lens.vsix
       - uses: actions/upload-artifact@v4

@@ -9,7 +9,7 @@ Filosofia: le regole leggono le *dichiarazioni* del manifest e puntano alla riga
 - **Ogni commit = release taggata `vX.Y.Z`**: nuova sezione in `CHANGELOG.md` (Keep a Changelog, in italiano) + `git tag -a vX.Y.Z -m "Release X.Y.Z"`. Bump `minor` per novità sostanziali (nuove regole, nuove feature editor), `patch` per fix. Senza chiederlo. Il campo `version` di `package.json` deve coincidere col tag (vsce lo pretende).
 - **MAI `git push`** — lo fa sempre l'utente. MAI `Co-Authored-By` nei commit.
 - **Un tag `v*` pushato pubblica sugli store** (job `publish` in `ci.yml`: Marketplace + Open VSX, con il `.vsix` esatto allegato alla release). Combinato con la regola "ogni commit = release taggata", significa che ogni push di un tag arriva agli utenti: la versione si bumpa con intenzione, e il `CHANGELOG.md` è la release note. Senza `VSCE_PAT`/`OVSX_PAT` nell'environment `marketplace` il job avvisa e salta, non fallisce.
-- **Gate prima di chiudere**: `npm run typecheck` + `npm test` + `npm run docs` + `npm run roadmap` (gli ultimi due devono essere un no-op) verdi. Stessi check della CI.
+- **Gate prima di chiudere**: `npm run typecheck` + `npm test` + `npm run docs` + `npm run roadmap` (gli ultimi due devono essere un no-op) + `npm run icon:check` verdi. Stessi check della CI.
 - **La logica va nel core puro** (`src/core/` — MAI import `vscode` lì) con test in `test/run.ts`; `src/extension.ts` è solo glue UI (non testata).
 - **TDD stretto sul core**: per ogni logica nuova/modificata in `src/core/`, scrivere prima il test e **verificare il RED** *prima* di implementare, poi portarlo a GREEN. La UI glue è esente per scelta.
 - **Ogni regola nuova**: entra in `src/core/analyze.ts` con id stabile `categoria/nome`, voce in `RULES` (con `severity`, `title` e un `rationale` che spiega il *rischio*, non ripete il titolo), test nel file dei test, `npm run docs` per rigenerare `docs/RULES.md`, voce nel `CHANGELOG.md`.
@@ -32,6 +32,7 @@ npm run roadmap          # rigenera docs/ROADMAP.md da BACKLOG.md (gate in CI)
 npm run backlog:sync     # milestone + issue GitHub da BACKLOG.md; in CI lo fa il workflow
                          # locale: GITHUB_TOKEN=$(gh auth token) GITHUB_REPOSITORY=Allan-Nava/hls-lens DRY_RUN=1 npm run backlog:sync
 npm run icon             # rigenera media/icon.png da primitive
+npm run icon:check       # verifica i PIXEL del PNG committato contro il generatore (gate in CI)
 npm run package          # .vsix locale (vsce --no-dependencies)
 
 # Prova rapida sulle fixture, senza Extension Host
@@ -45,11 +46,11 @@ code test/fixtures/media-live-broken.m3u8   # 6 regole devono accendersi
 - `src/core/analyze.ts` — le 33 regole + `RULES` (il catalogo documentato) + la tabella `VERSION_REQUIREMENTS` tag→versione minima. Ordine dei finding: severità, poi riga.
 - `src/core/ladder.ts` — modello dell'albero (`buildLadder`, `renditionRows`, `ladderSummary`) e formattazione (`formatBandwidth`, `formatResolution`).
 - `src/core/uri.ts` — `resolveUri`/`baseOf`/`isRemote`/`isPlainHttp`/`looksLikePlaylistUri`/`looksLikeFmp4Uri`.
-- `src/core/backlog.ts` — `BACKLOG.md` come dato: `parseBacklog`, `duplicateIds`, `sectionState`, `backlogStats`, `renderRoadmap` e la mappatura verso le issue (`markerOf`/`idFromBody`/`issueTitle`/`issueBody`). Non c'entra con l'estensione: sta nel core perché è logica, e la logica si testa.
+- `src/core/backlog.ts` — `BACKLOG.md` come dato: `parseBacklog`, `duplicateIds`, `sectionState`, `backlogStats`, `renderRoadmap`, `orphanMilestones` e la mappatura verso le issue (`markerOf`/`idFromBody`/`issueTitle`/`issueBody`). Non c'entra con l'estensione: sta nel core perché è logica, e la logica si testa.
 - `src/core/segcheck.ts` — `buildSegcheckArgs` e il parsing del JSON di segcheck (`worst`, `summary`, `findings[]` con `check`/`target`/`status`/`message`/`hint`), mappato su `Finding`.
 - `src/core/fetch.ts` — fetch su `node:http(s)` con redirect, timeout, cap sul body; restituisce anche l'URL **finale**.
 - `src/extension.ts` — glue: diagnostics (debounce 300ms), `TreeDataProvider`, `DocumentLinkProvider`, `TextDocumentContentProvider` per lo schema `hls-lens:`, status bar, spawn di segcheck.
-- `scripts/gen-docs.ts` → `docs/RULES.md` · `scripts/make-icon.mjs` → `media/icon.png`.
+- `scripts/gen-docs.ts` → `docs/RULES.md` · `scripts/gen-roadmap.ts` → `docs/ROADMAP.md` · `scripts/backlog-sync.ts` → milestone/issue · `scripts/make-icon.mjs` → `media/icon.png` (con `--check`, il gate sui pixel).
 
 ## Trappole note / regole tecniche
 
@@ -64,7 +65,7 @@ code test/fixtures/media-live-broken.m3u8   # 6 regole devono accendersi
 - **`workspaceContains:**/*.m3u8` è l'unico `activationEvent` dichiarato**: `onLanguage:m3u8` lo genera VS Code dal contributo `languages` e dichiararlo a mano è un warning.
 - **`--insecure` di segcheck esiste per i lab self-signed**, non per silenziare un problema di certificati in produzione.
 - **`renderRoadmap` deve restare deterministico**: il gate in CI lo rigenera e fa il diff col file committato, quindi una data, un contatore o qualunque input ambientale nel roadmap fa fallire la build su un run che non ha cambiato niente. Lo stesso vale per `issueBody`: il sync confronta il body renderizzato con quello su GitHub, e qualcosa di variabile lì dentro riscriverebbe tutte le issue a ogni push.
-- **L'icona PNG è generata**: non sostituirla con un binario opaco, si rigenera con `npm run icon` (encoder PNG su `zlib`, supersampling 4x per l'antialiasing).
+- **L'icona PNG è generata**: non sostituirla con un binario opaco, si rigenera con `npm run icon` (encoder PNG su `zlib`, supersampling 4x per l'antialiasing). **Il gate confronta i pixel, non i byte** (`npm run icon:check`): l'output DEFLATE non è fissato dal formato, quindi lo zlib del runner Linux ricomprime la stessa immagine in byte diversi da quelli scritti su macOS — un `git diff` sul PNG rigenerato faceva fallire la CI a ogni run senza che fosse cambiato niente. Vale per qualunque altro artefatto binario generato che venisse aggiunto.
 
 ## Puntatori
 

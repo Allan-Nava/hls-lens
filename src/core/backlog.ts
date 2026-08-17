@@ -209,6 +209,23 @@ export function renderRoadmap(sections: BacklogSection[]): string {
   return lines.join('\n');
 }
 
+/**
+ * orphanMilestones names the milestones on GitHub that the backlog no longer knows
+ * about and that hold no issues.
+ *
+ * Milestones are matched by title, so renaming a `##` heading creates a new milestone
+ * and leaves the old one behind, empty. The sync reports these instead of deleting
+ * them: it cannot tell a leftover from a milestone somebody opened by hand, and one
+ * that still holds issues is somebody's working state either way.
+ */
+export function orphanMilestones(
+  sections: BacklogSection[],
+  milestones: Array<{ title: string; issues: number }>,
+): string[] {
+  const known = new Set(sections.map((s) => s.title));
+  return milestones.filter((m) => !known.has(m.title) && m.issues === 0).map((m) => m.title);
+}
+
 /** markerOf is the anchor that ties an issue to its backlog id, title changes and all. */
 export function markerOf(id: string): string {
   return `<!-- backlog:${id} -->`;
