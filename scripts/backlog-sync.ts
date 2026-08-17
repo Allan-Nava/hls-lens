@@ -208,6 +208,22 @@ async function syncIssues(items: BacklogItem[], milestones: Map<string, number>)
   }
 }
 
+/**
+ * A 404 is a value everywhere else in this script ("no label yet", "no milestone yet"),
+ * which makes a wrong repository, a token without access and a repository that does not
+ * exist at all look exactly like an empty backlog: every listing comes back empty and the
+ * run reports success having done nothing. One request up front turns that into an error.
+ */
+async function assertRepoReachable(): Promise<void> {
+  const repo = await gh<{ full_name: string }>('GET', `/repos/${OWNER}/${NAME}`);
+  if (!repo) {
+    fail(
+      `${OWNER}/${NAME} is not reachable — the repository does not exist, or the token cannot see it. ` +
+        'Nothing was written.',
+    );
+  }
+}
+
 async function main(): Promise<void> {
   const sections = parseBacklog(fs.readFileSync(FILE, 'utf8'));
   if (sections.length === 0) fail(`${FILE}: no milestone found`);
@@ -221,6 +237,7 @@ async function main(): Promise<void> {
     `${FILE}: ${sections.length} milestones, ${stats.total} items (${stats.done} done)${DRY_RUN ? ' — dry run' : ''}`,
   );
 
+  await assertRepoReachable();
   await ensureLabel();
   const milestones = await syncMilestones(sections);
   await syncIssues(items, milestones);
