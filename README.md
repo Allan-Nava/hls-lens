@@ -10,7 +10,7 @@
 
 An `.m3u8` file is a list of claims, and a text editor shows you all of them equally. HLS Lens reads the manifest the way someone who has debugged a stream reads it: a wildcard where a hostname should be, a segment longer than the target duration it declares, a `PROGRAM-DATE-TIME` that walks away from the media timeline, an fMP4 playlist with no init segment, a content key fetched over plaintext HTTP.
 
-**47 rules, on the line you have to fix**, while you edit:
+**58 rules, on the line you have to fix**, while you edit:
 
 ```m3u8
 #EXTM3U
@@ -37,6 +37,7 @@ Plus the ladder as a tree, clickable child playlists, and — when you point it 
 - **Quick fixes for the mechanical findings.** Bump `EXT-X-VERSION` to what the playlist already uses, append a missing `EXT-X-ENDLIST`, raise `EXT-X-TARGETDURATION` to the longest segment. Only those: a fix that needs a judgement call is not offered.
 - **The renditions compared with each other.** `HLS Lens: Check Renditions Together` loads every rung of the open master — from disk or from the CDN — and reports what they disagree about: a different `EXT-X-VERSION`, segment counts that do not match, boundaries that drift, discontinuities one segment out, one rung that already ended while the others are live. Every rendition is a valid playlist on its own; these defects only exist between them, and they are what a player hits the moment it switches rungs.
 - **Watch a live playlist.** `HLS Lens: Watch Live Playlist` reloads the manifest on its own target duration and says what changed each time: the new segments, what slid off the front, a discontinuity that appeared, an `EXT-X-ENDLIST` that arrived. A window that stops moving for two reloads is reported — that is the packager falling over, and it looks identical to a healthy stream in any single snapshot.
+- **DASH, read the same way.** Open an `.mpd` and eleven `dash/*` rules report on it: a `@mediaPresentationDuration` the segment timeline does not fill, `<S>` elements that do not chain (a hole in the presentation, or two segments claiming the same seconds), a dynamic manifest with no `<UTCTiming>` for clients to synchronise their clock to, an adaptation set that never declares `@segmentAlignment`, a `@media` template with no `$Number$`. The XML reader is written here, like everything else: still no dependencies.
 - **A status bar line** that says what the open manifest is: `4 variants · 360p→1080p · 0.88 Mbps–6.10 Mbps · 3 alternate renditions`.
 
 ## The rules, in one paragraph
@@ -53,8 +54,8 @@ From the Marketplace: search **HLS Lens**. Or build the `.vsix` yourself:
 
 ```bash
 npm install
-npm run package        # → hls-lens-0.7.0.vsix
-code --install-extension hls-lens-0.7.0.vsix
+npm run package        # → hls-lens-0.8.0.vsix
+code --install-extension hls-lens-0.8.0.vsix
 ```
 
 For the deep check, install segcheck (`brew install --cask allan-nava/tap/segcheck`, or a binary from [its releases](https://github.com/Allan-Nava/segcheck/releases)) and point `hlsLens.segcheck.path` at it if it is not on your `PATH`.
@@ -92,7 +93,7 @@ For the deep check, install segcheck (`brew install --cask allan-nava/tap/segche
 
 ## Design notes
 
-- **The logic is a pure core.** `src/core/` never imports `vscode`: the parser, the 47 rules, the ladder model, URI resolution, the segcheck bridge — and even the backlog parser and the icon generator — are plain TypeScript with tests. `src/extension.ts` only translates that model into diagnostics, tree items and links, and the scripts in `scripts/` are I/O over the same core.
+- **The logic is a pure core.** `src/core/` never imports `vscode`: the parser, the 58 rules, the ladder model, URI resolution, the segcheck bridge — and even the backlog parser and the icon generator — are plain TypeScript with tests. `src/extension.ts` only translates that model into diagnostics, tree items and links, and the scripts in `scripts/` are I/O over the same core.
 - **Line numbers everywhere, 0-based.** The parser keeps the line index of every tag, URI, `EXTINF` and `PROGRAM-DATE-TIME` it decodes, because a finding that cannot point at a line is just a linter you have to read twice.
 - **Attribute lists are parsed, not split.** `CODECS="avc1.4d401f,mp4a.40.2"` is one value with a comma in it; splitting the line on commas is how a manifest gets reported as codec-less.
 - **No dependencies.** Not one runtime dependency; the fetcher is `node:http(s)` and even the Marketplace icon is generated (`npm run icon`) rather than pulled from a toolchain.
@@ -119,7 +120,7 @@ to Open VSX:
 
 ```bash
 # after the changelog entry and the version bump
-git tag -a v0.7.0 -m "Release 0.7.0" && git push origin main --follow-tags
+git tag -a v0.8.0 -m "Release 0.8.0" && git push origin main --follow-tags
 ```
 
 The two store credentials live in the `marketplace` environment, which is also where you can require

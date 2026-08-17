@@ -15,6 +15,7 @@ import { completeAt, renderTagHover, tagSpec } from './core/spec';
 import { quickFixesFor } from './core/fixes';
 import { analyzeAcross, LoadedRendition } from './core/crosscheck';
 import { describeChange, diffPlaylists, watchIntervalMs } from './core/watch';
+import { analyzeMpd } from './core/dash';
 import { isRemote, looksLikePlaylistUri, resolveUri } from './core/uri';
 
 /** Scheme of the read-only documents holding manifests fetched from a URL. */
@@ -119,6 +120,11 @@ function isPlaylistDocument(doc: vscode.TextDocument): boolean {
   return doc.languageId === 'm3u8' || looksLikePlaylist(doc.getText().slice(0, 64));
 }
 
+/** An .mpd, or an XML document whose root is an MPD saved under another name. */
+function isMpdDocument(doc: vscode.TextDocument): boolean {
+  return doc.languageId === 'dash-mpd' || /<MPD[\s>]/.test(doc.getText().slice(0, 2048));
+}
+
 function severityToVsCode(severity: Severity): vscode.DiagnosticSeverity {
   switch (severity) {
     case 'error':
@@ -133,8 +139,22 @@ function severityToVsCode(severity: Severity): vscode.DiagnosticSeverity {
 }
 
 function updateDiagnostics(doc: vscode.TextDocument): void {
-  if (!isPlaylistDocument(doc)) return;
   const config = vscode.workspace.getConfiguration('hlsLens');
+  if (isMpdDocument(doc) && !isPlaylistDocument(doc)) {
+    if (!config.get<boolean>('diagnostics.enabled', true)) {
+      diagnostics.delete(doc.uri);
+      return;
+    }
+    const skip = config.get<string[]>('diagnostics.skip', []);
+    const floor = config.get<Severity>('diagnostics.minSeverity', 'hint');
+    const rank: Record<Severity, number> = { error: 0, warning: 1, hint: 2 };
+    const found = analyzeMpd(doc.getText())
+      .filter((f) => !skip.includes(f.rule) && !skip.includes(f.rule.split('/')[0]))
+      .filter((f) => rank[f.severity] <= rank[floor]);
+    diagnostics.set(doc.uri, found.map((f) => toDiagnostic(doc, f)));
+    return;
+  }
+  if (!isPlaylistDocument(doc)) return;
   if (!config.get<boolean>('diagnostics.enabled', true)) {
     diagnostics.delete(doc.uri);
     return;

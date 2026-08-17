@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A live MPD with the defects the dash/* rules look for. -->
+<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" profiles="urn:mpeg:dash:profile:isoff-live:2011"
+     type="dynamic" availabilityStartTime="2026-08-17T10:00:00Z" minimumUpdatePeriod="PT4S"
+     mediaPresentationDuration="PT30S">
+  <Period id="p0" start="PT0S">
+    <AdaptationSet mimeType="video/mp4">
+      <SegmentTemplate media="$RepresentationID$/chunk.m4s" timescale="1000" startNumber="1">
+        <SegmentTimeline>
+          <S t="0" d="4000"/>
+          <S t="8000" d="4000"/>
+        </SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="v0" width="1280" height="720"/>
+      <Representation id="v1" bandwidth="4800000" codecs="avc1.640028" width="1920" height="1080"/>
+    </AdaptationSet>
+  </Period>
+</MPD>

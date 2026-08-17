@@ -83,6 +83,10 @@ The first rules that need the master and its renditions at once.
 - [x] **HL-13 — Live watch**: `src/core/watch.ts` diffs two reloads of the same playlist — new segments, what slid off the front, a discontinuity that appeared, an `EXT-X-ENDLIST` that arrived, and a window that did not move at all. Segments are matched by URI, not by index, because the index changes every time the window slides. `HLS Lens: Watch Live Playlist` polls on the manifest's own target duration (floored at 2s), reports in the output channel, warns after two stalled reloads and stops itself when the stream ends.
 - [x] **HL-14 — Deep check on a selection**: right-click a rendition in the tree for `HLS Lens: Deep Check This Rendition`, which points segcheck at that rung's resolved URL instead of the whole master.
 
+## v0.8.0 — DASH
+
+- [x] **HL-8 — MPD parser and a `dash/*` rule category**: `src/core/xml.ts` (a narrow XML reader written here, so the extension still has no dependencies) and `src/core/dash.ts` with eleven rules — `@mediaPresentationDuration` against the segment timeline, `<S>` elements that do not chain, a dynamic manifest with no `<UTCTiming>`, an adaptation set with no `@segmentAlignment`, a `@media` template with no `$Number$`, and a `.mpd` that is really an error page a CDN returned. `.mpd` files get diagnostics like `.m3u8` files do. The name of the extension stays HLS-first; DASH manifests are read, not the headline.
+
 ## Docs and site
 
 - [ ] **HL-16 — Documentation site**: GitHub Pages from `docs/`, with the generated rule reference as its reference section and the roadmap as its plan (the sibling lenses already do this).
@@ -98,7 +102,3 @@ computable from the declarations alone.
 Everything that needs the master and its variants together, or the same playlist over time.
 
 - [ ] **HL-12 — Timeline webview**: segments as a strip with discontinuities, gaps and ad breaks marked, and the renditions stacked to show whether they are aligned.
-
-## Later — DASH
-
-- [ ] **HL-8 — MPD parser and a `dash/*` rule category**: `@mediaPresentationDuration` vs the segment timeline, `SegmentTemplate` numbering gaps, `@availabilityStartTime` with no `UTCTiming`, `AdaptationSet` without `@segmentAlignment`. The name of the extension stays HLS-first; DASH manifests are read, not the headline.

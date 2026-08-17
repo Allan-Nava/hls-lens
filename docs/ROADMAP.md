@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**18 of 21 items done** · `████████░░` 86%
+**19 of 21 items done** · `█████████░` 90%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -19,9 +19,9 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [v0.5.0 — Editor](#v050--editor) | ✅ shipped | 3/3 |
 | [v0.6.0 — More than one file at a time](#v060--more-than-one-file-at-a-time) | ✅ shipped | 2/2 |
 | [v0.7.0 — Watching a stream move](#v070--watching-a-stream-move) | ✅ shipped | 2/2 |
+| [v0.8.0 — DASH](#v080--dash) | ✅ shipped | 1/1 |
 | [Docs and site](#docs-and-site) | ⏳ planned | 0/1 |
 | [More than one file at a time](#more-than-one-file-at-a-time) | ⏳ planned | 0/1 |
-| [Later — DASH](#later--dash) | ⏳ planned | 0/1 |
 
 ## v0.1.0 — Reading manifests
 
@@ -100,6 +100,12 @@ The first rules that need the master and its renditions at once.
 - [x] **HL-13 — Live watch**: `src/core/watch.ts` diffs two reloads of the same playlist — new segments, what slid off the front, a discontinuity that appeared, an `EXT-X-ENDLIST` that arrived, and a window that did not move at all. Segments are matched by URI, not by index, because the index changes every time the window slides. `HLS Lens: Watch Live Playlist` polls on the manifest's own target duration (floored at 2s), reports in the output channel, warns after two stalled reloads and stops itself when the stream ends.
 - [x] **HL-14 — Deep check on a selection**: right-click a rendition in the tree for `HLS Lens: Deep Check This Rendition`, which points segcheck at that rung's resolved URL instead of the whole master.
 
+## v0.8.0 — DASH
+
+✅ shipped · 1 of 1 · `██████████`
+
+- [x] **HL-8 — MPD parser and a `dash/*` rule category**: `src/core/xml.ts` (a narrow XML reader written here, so the extension still has no dependencies) and `src/core/dash.ts` with eleven rules — `@mediaPresentationDuration` against the segment timeline, `<S>` elements that do not chain, a dynamic manifest with no `<UTCTiming>`, an adaptation set with no `@segmentAlignment`, a `@media` template with no `$Number$`, and a `.mpd` that is really an error page a CDN returned. `.mpd` files get diagnostics like `.m3u8` files do. The name of the extension stays HLS-first; DASH manifests are read, not the headline.
+
 ## Docs and site
 
 ⏳ planned · 0 of 1 · `░░░░░░░░░░`
@@ -113,9 +119,3 @@ Everything that needs the master and its variants together, or the same playlist
 ⏳ planned · 0 of 1 · `░░░░░░░░░░`
 
 - [ ] **HL-12 — Timeline webview**: segments as a strip with discontinuities, gaps and ad breaks marked, and the renditions stacked to show whether they are aligned.
-
-## Later — DASH
-
-⏳ planned · 0 of 1 · `░░░░░░░░░░`
-
-- [ ] **HL-8 — MPD parser and a `dash/*` rule category**: `@mediaPresentationDuration` vs the segment timeline, `SegmentTemplate` numbering gaps, `@availabilityStartTime` with no `UTCTiming`, `AdaptationSet` without `@segmentAlignment`. The name of the extension stays HLS-first; DASH manifests are read, not the headline.

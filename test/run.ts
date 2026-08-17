@@ -16,6 +16,8 @@ import { tagSpec, renderTagHover, SPEC_TAGS, completeAt } from '../src/core/spec
 import { quickFixesFor } from '../src/core/fixes';
 import { analyzeAcross, LoadedRendition } from '../src/core/crosscheck';
 import { diffPlaylists, describeChange, watchIntervalMs } from '../src/core/watch';
+import { parseXml, findAll, attr } from '../src/core/xml';
+import { parseIsoDuration, analyzeMpd } from '../src/core/dash';
 import { analyze, RULES, Finding, Severity } from '../src/core/analyze';
 import { buildLadder, renditionRows, ladderSummary, formatBandwidth, formatResolution } from '../src/core/ladder';
 import { resolveUri, baseOf, isRemote, isPlainHttp, looksLikePlaylistUri } from '../src/core/uri';
@@ -385,7 +387,7 @@ async function main(): Promise<void> {
     for (const r of RULES) {
       assert.ok(!ids.has(r.id), `duplicate rule id ${r.id}`);
       ids.add(r.id);
-      assert.match(r.id, /^(syntax|master|media|cross)\/[a-z0-9-]+$/, `${r.id} is not a namespaced kebab-case id`);
+      assert.match(r.id, /^(syntax|master|media|cross|dash)\/[a-z0-9-]+$/, `${r.id} is not a namespaced kebab-case id`);
       assert.ok(r.title.trim().length > 0, `${r.id} has no title`);
       assert.ok(r.rationale.split(/\s+/).length >= 8, `${r.id} needs a rationale that explains the risk`);
       assert.ok(['error', 'warning', 'hint'].includes(r.severity), `${r.id} has severity ${r.severity}`);
@@ -837,6 +839,167 @@ async function main(): Promise<void> {
       [],
       'a normal media playlist is not an I-frame playlist',
     );
+  });
+
+  // ------------------------------------------------------------------- xml, mpd
+  await test('parseXml reads elements, attributes and nesting with line numbers', () => {
+    const { root } = parseXml(
+      [
+        '<?xml version="1.0" encoding="utf-8"?>',
+        '<!-- a comment -->',
+        '<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" type="static" mediaPresentationDuration="PT30S">',
+        '  <Period id="p0">',
+        "    <AdaptationSet mimeType='video/mp4' segmentAlignment='true'>",
+        '      <Representation id="v0" bandwidth="2400000" width="1280" height="720"/>',
+        '    </AdaptationSet>',
+        '  </Period>',
+        '</MPD>',
+      ].join('\n'),
+    );
+    assert.ok(root, 'the document parses');
+    assert.strictEqual(root!.name, 'MPD');
+    assert.strictEqual(root!.line, 2, '0-based, like everything else in the core');
+    assert.strictEqual(root!.attrs.get('type'), 'static');
+
+    const period = root!.children[0];
+    assert.strictEqual(period.name, 'Period');
+    assert.strictEqual(period.line, 3);
+    const set = period.children[0];
+    assert.strictEqual(set.attrs.get('mimeType'), 'video/mp4', 'single quotes are quotes too');
+    const rep = set.children[0];
+    assert.strictEqual(rep.name, 'Representation');
+    assert.strictEqual(rep.children.length, 0, 'a self-closing element has no children');
+    assert.strictEqual(rep.attrs.get('bandwidth'), '2400000');
+  });
+
+  await test('parseXml survives a document that is not well formed', () => {
+    const unclosed = parseXml('<MPD>\n  <Period>\n</MPD>\n');
+    assert.ok(unclosed.errors.length > 0, 'it says what is wrong');
+    assert.ok(unclosed.root, 'and still returns what it could read');
+    assert.strictEqual(parseXml('not xml at all').root, null);
+    assert.doesNotThrow(() => parseXml('<a attr="unterminated>'));
+  });
+
+  await test('findAll walks the whole tree, attr reads one value', () => {
+    const { root } = parseXml(
+      '<MPD>\n<Period>\n<AdaptationSet>\n<Representation id="a"/>\n<Representation id="b"/>\n</AdaptationSet>\n</Period>\n<Period>\n<AdaptationSet>\n<Representation id="c"/>\n</AdaptationSet>\n</Period>\n</MPD>\n',
+    );
+    const reps = findAll(root!, 'Representation');
+    assert.deepStrictEqual(reps.map((r) => attr(r, 'id')), ['a', 'b', 'c']);
+    assert.strictEqual(attr(reps[0], 'missing'), undefined);
+  });
+
+  await test('parseIsoDuration reads the durations DASH writes', () => {
+    assert.strictEqual(parseIsoDuration('PT30S'), 30);
+    assert.strictEqual(parseIsoDuration('PT1M30.5S'), 90.5);
+    assert.strictEqual(parseIsoDuration('PT2H3M4S'), 7384);
+    assert.strictEqual(parseIsoDuration('P1DT1S'), 86401);
+    assert.strictEqual(parseIsoDuration('PT0S'), 0);
+    assert.strictEqual(parseIsoDuration('30'), null, 'a bare number is not an ISO duration');
+    assert.strictEqual(parseIsoDuration(undefined), null);
+  });
+
+  // ------------------------------------------------------------------ dash rules
+  const mpd = (body: string, attrs = 'type="static" mediaPresentationDuration="PT12S"'): string =>
+    `<?xml version="1.0"?>\n<MPD xmlns="urn:mpeg:dash:schema:mpd:2011" ${attrs}>\n${body}\n</MPD>\n`;
+  const mpdBody = (segments: string): string =>
+    `  <Period id="p0">\n    <AdaptationSet mimeType="video/mp4" segmentAlignment="true">\n      <SegmentTemplate media="$RepresentationID$-$Number$.m4s" initialization="$RepresentationID$-init.mp4" timescale="1000" startNumber="1">\n        <SegmentTimeline>\n${segments}\n        </SegmentTimeline>\n      </SegmentTemplate>\n      <Representation id="v0" bandwidth="2400000" codecs="avc1.4d401f" width="1280" height="720"/>\n    </AdaptationSet>\n  </Period>`;
+
+  await test('a well-formed MPD reports nothing', () => {
+    const text = mpd(mpdBody('          <S t="0" d="4000" r="2"/>'));
+    assert.deepStrictEqual(analyzeMpd(text), []);
+  });
+
+  await test('dash/timeline-gap catches segments that do not chain', () => {
+    // 0-4000, then 8000: the second S starts a full segment after the first ends.
+    const text = mpd(mpdBody('          <S t="0" d="4000"/>\n          <S t="8000" d="4000"/>'), 'type="static" mediaPresentationDuration="PT12S"');
+    const found = analyzeMpd(text).filter((f) => f.rule === 'dash/timeline-gap');
+    assert.strictEqual(found.length, 1);
+    assert.match(found[0].message, /4000|4s|gap/i);
+    assert.ok(found[0].line > 0, 'it points at the S element');
+  });
+
+  await test('dash/duration-vs-timeline catches a presentation duration the segments do not fill', () => {
+    // Timeline covers 12s, the MPD claims 30.
+    const text = mpd(mpdBody('          <S t="0" d="4000" r="2"/>'), 'type="static" mediaPresentationDuration="PT30S"');
+    const found = analyzeMpd(text).filter((f) => f.rule === 'dash/duration-vs-timeline');
+    assert.strictEqual(found.length, 1);
+    assert.match(found[0].message, /30|12/);
+  });
+
+  await test('dash/dynamic-without-utctiming catches a live MPD with no clock to sync to', () => {
+    const live = mpd(mpdBody('          <S t="0" d="4000" r="2"/>'), 'type="dynamic" availabilityStartTime="2026-08-17T10:00:00Z" minimumUpdatePeriod="PT4S"');
+    const found = analyzeMpd(live).filter((f) => f.rule === 'dash/dynamic-without-utctiming');
+    assert.strictEqual(found.length, 1);
+
+    const withClock = live.replace('</MPD>', '  <UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-iso:2014" value="https://time.akamai.com/?iso"/>\n</MPD>');
+    assert.deepStrictEqual(analyzeMpd(withClock).filter((f) => f.rule === 'dash/dynamic-without-utctiming'), []);
+  });
+
+  await test('dash/adaptationset-not-aligned and the representation basics', () => {
+    const unaligned = mpd(
+      '  <Period id="p0">\n    <AdaptationSet mimeType="video/mp4">\n      <Representation id="v0" bandwidth="2400000"/>\n      <Representation id="v1"/>\n    </AdaptationSet>\n  </Period>',
+    );
+    const ids = analyzeMpd(unaligned).map((f) => f.rule);
+    assert.ok(ids.includes('dash/adaptationset-not-aligned'), 'two representations and no segmentAlignment');
+    assert.ok(ids.includes('dash/missing-bandwidth'), 'a representation with no bandwidth cannot be ranked');
+    assert.ok(ids.includes('dash/missing-codecs'));
+
+    const single = mpd('  <Period id="p0">\n    <AdaptationSet mimeType="video/mp4">\n      <Representation id="v0" bandwidth="2400000" codecs="avc1.4d401f"/>\n    </AdaptationSet>\n  </Period>');
+    assert.deepStrictEqual(
+      analyzeMpd(single).filter((f) => f.rule === 'dash/adaptationset-not-aligned'),
+      [],
+      'one representation has nothing to be aligned with',
+    );
+  });
+
+  await test('dash/segment-template-without-number catches a template that cannot address a segment', () => {
+    const text = mpd(
+      '  <Period id="p0">\n    <AdaptationSet mimeType="video/mp4" segmentAlignment="true">\n      <SegmentTemplate media="chunk.m4s" initialization="init.mp4"/>\n      <Representation id="v0" bandwidth="2400000" codecs="avc1.4d401f"/>\n    </AdaptationSet>\n  </Period>',
+    );
+    const found = analyzeMpd(text).filter((f) => f.rule === 'dash/segment-template-without-number');
+    assert.strictEqual(found.length, 1);
+  });
+
+  await test('analyzeMpd reports a document that is not an MPD instead of guessing', () => {
+    const found = analyzeMpd('<html><body>404 not found</body></html>');
+    assert.strictEqual(found.length, 1);
+    assert.strictEqual(found[0].rule, 'dash/not-an-mpd');
+    assert.strictEqual(found[0].severity, 'error');
+  });
+
+  await test('the broken MPD fixture is caught rule by rule', () => {
+    const found = analyzeMpd(fixture('dash-broken.mpd'));
+    const ids = new Set(found.map((f) => f.rule));
+    for (const expected of [
+      'dash/timeline-gap',
+      'dash/duration-vs-timeline',
+      'dash/dynamic-without-utctiming',
+      'dash/adaptationset-not-aligned',
+      'dash/missing-bandwidth',
+      'dash/missing-codecs',
+      'dash/segment-template-without-number',
+      'dash/segment-template-without-init',
+    ]) {
+      assert.ok(ids.has(expected), `${expected} fires on the fixture`);
+    }
+    assert.ok(
+      found.every((f) => f.line > 0 && f.line < fixture('dash-broken.mpd').split('\n').length),
+      'every finding points at a line of the file',
+    );
+  });
+
+  await test('every dash finding is documented in the catalogue', () => {
+    const documented = new Set(RULES.map((r) => r.id));
+    const emitted = [
+      ...analyzeMpd(mpd(mpdBody('          <S t="0" d="4000"/>\n          <S t="8000" d="4000"/>'), 'type="dynamic" availabilityStartTime="2026-08-17T10:00:00Z"')),
+      ...analyzeMpd('<html/>'),
+    ];
+    assert.ok(emitted.length >= 3);
+    for (const finding of emitted) {
+      assert.ok(documented.has(finding.rule), `${finding.rule} is documented`);
+      assert.ok(finding.rule.startsWith('dash/'), `${finding.rule} is in the dash category`);
+    }
   });
 
   // ---------------------------------------------------------------- live watch

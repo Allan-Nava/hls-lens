@@ -12,7 +12,7 @@ import { RULES } from '../src/core/analyze';
 
 const OUT = path.join('docs', 'RULES.md');
 
-const scopes: Array<{ id: 'syntax' | 'master' | 'media' | 'cross'; title: string; blurb: string }> = [
+const scopes: Array<{ id: 'syntax' | 'master' | 'media' | 'cross' | 'dash'; title: string; blurb: string }> = [
   { id: 'syntax', title: 'Structure', blurb: 'Rules about the file being a playlist at all.' },
   { id: 'master', title: 'Master playlist', blurb: 'Rules about the ladder and the rendition groups.' },
   { id: 'media', title: 'Media playlist', blurb: 'Rules about segments, timing, keys and the live window.' },
@@ -21,6 +21,12 @@ const scopes: Array<{ id: 'syntax' | 'master' | 'media' | 'cross'; title: string
     title: 'Across playlists',
     blurb:
       'Rules that need the master and its renditions at once, from `HLS Lens: Check Renditions Together`. Every rendition is a valid playlist on its own; these are the ways they can disagree with each other.',
+  },
+  {
+    id: 'dash',
+    title: 'DASH',
+    blurb:
+      'Rules for an `.mpd`. The extension stays HLS-first, but the same stream is usually packaged both ways from one mezzanine, and the defects are the same ones: a declared duration the segments do not fill, a hole in the timeline, a live manifest with no clock.',
   },
 ];
 

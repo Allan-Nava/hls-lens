@@ -80,6 +80,21 @@ Nothing else is offered a fix. A missing `CODECS` string, a badly spaced ladder 
 
 Only the playable video rungs are compared. An alternate audio or subtitle rendition is legitimately segmented differently, and reporting that as drift would be a finding that is not one. A rendition that cannot be read is listed in the **HLS Lens** output channel and skipped, so one unreachable rung does not hide the others.
 
+## DASH manifests
+
+Open an `.mpd` and the `dash/*` rules report on it in the same Problems panel, on the line to edit. The same stream is usually packaged both ways from one mezzanine, and the defects are the same ones: a duration that disagrees with the segments, a hole in the timeline, a live manifest with no clock.
+
+| Rule | What it catches |
+|---|---|
+| `dash/timeline-gap` | `<S>` elements that do not chain — a gap, or two segments claiming the same seconds |
+| `dash/duration-vs-timeline` | `@mediaPresentationDuration` against what the timeline actually covers |
+| `dash/dynamic-without-utctiming` | a live MPD with no `<UTCTiming>`: a client whose clock is off requests segments that do not exist yet |
+| `dash/adaptationset-not-aligned` | several representations with no `@segmentAlignment="true"`, so a player must assume it cannot switch |
+| `dash/segment-template-without-number` | a `@media` template with neither `$Number$` nor `$Time$`: every segment is the same URL |
+| `dash/not-an-mpd` | a `.mpd` that is an error page a CDN returned |
+
+The XML reader is part of the extension rather than a dependency, and it is deliberately narrow: elements, attributes and nesting. A manifest that needs entity expansion, DTDs or namespace resolution is reported rather than guessed at.
+
 ## Watching a live playlist
 
 `HLS Lens: Watch Live Playlist` reloads a manifest opened from a URL and reports what changed, in the **HLS Lens** output channel, at the interval the playlist itself declares — `EXT-X-TARGETDURATION`, floored at two seconds so a low-latency playlist does not turn the watch into a load test. `hlsLens.watch.intervalSeconds` overrides it.

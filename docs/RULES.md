@@ -2,7 +2,7 @@
 
 # Rules
 
-HLS Lens ships 47 rules. Most read one manifest — the claims it makes — and point at the line you have to fix;
+HLS Lens ships 58 rules. Most read one manifest — the claims it makes — and point at the line you have to fix;
 the `cross/*` rules read the master and its renditions together and report on the variant line of the master.
 For the defects that need the segment bytes (a gap that no `EXT-X-DISCONTINUITY` declares, a 1080p rung that codes 720p),
 run the deep check, which brings [segcheck](https://github.com/Allan-Nava/segcheck) findings into the same Problems panel.
@@ -61,6 +61,17 @@ Ids are stable: they are what `hlsLens.diagnostics.skip` pins.
 | [`cross/timeline-drift`](#crosstimeline-drift) | error | Segment boundaries land at the same time in every rendition |
 | [`cross/discontinuity-mismatch`](#crossdiscontinuity-mismatch) | error | Discontinuities land on the same segment in every rendition |
 | [`cross/bitrate-vs-declared`](#crossbitrate-vs-declared) | warning | BANDWIDTH covers the bitrate the rendition declares |
+| [`dash/not-an-mpd`](#dashnot-an-mpd) | error | The file is an MPD |
+| [`dash/malformed-xml`](#dashmalformed-xml) | error | The manifest is well-formed XML |
+| [`dash/missing-presentation-duration`](#dashmissing-presentation-duration) | warning | A static MPD declares @mediaPresentationDuration |
+| [`dash/duration-vs-timeline`](#dashduration-vs-timeline) | warning | @mediaPresentationDuration matches the segment timeline |
+| [`dash/timeline-gap`](#dashtimeline-gap) | error | SegmentTimeline entries chain without gaps or overlaps |
+| [`dash/dynamic-without-utctiming`](#dashdynamic-without-utctiming) | warning | A dynamic MPD carries UTCTiming |
+| [`dash/adaptationset-not-aligned`](#dashadaptationset-not-aligned) | warning | Adaptation sets with several representations declare @segmentAlignment |
+| [`dash/missing-bandwidth`](#dashmissing-bandwidth) | error | Every representation declares @bandwidth |
+| [`dash/missing-codecs`](#dashmissing-codecs) | warning | Representations declare @codecs |
+| [`dash/segment-template-without-number`](#dashsegment-template-without-number) | error | A segment template addresses more than one segment |
+| [`dash/segment-template-without-init`](#dashsegment-template-without-init) | warning | A segment template names an initialisation segment |
 
 ## Structure
 
@@ -359,3 +370,73 @@ An ad break or an encoder restart that is one segment out on one rung breaks the
 **BANDWIDTH covers the bitrate the rendition declares** · warning
 
 BANDWIDTH is the peak a rendition can reach, and ABR provisions against it. A playlist whose own EXT-X-BITRATE is higher than the master promises makes the player pick a rung the connection cannot carry, and rebuffer.
+
+## DASH
+
+Rules for an `.mpd`. The extension stays HLS-first, but the same stream is usually packaged both ways from one mezzanine, and the defects are the same ones: a declared duration the segments do not fill, a hole in the timeline, a live manifest with no clock.
+
+### `dash/not-an-mpd`
+
+**The file is an MPD** · error
+
+A .mpd whose root is not <MPD> is nearly always an error page or a redirect saved by hand. Saying so once is more use than reporting every attribute it does not have.
+
+### `dash/malformed-xml`
+
+**The manifest is well-formed XML** · error
+
+Players parse an MPD strictly. A document that does not close its elements is not read at all, however good the rest of the packaging is.
+
+### `dash/missing-presentation-duration`
+
+**A static MPD declares @mediaPresentationDuration** · warning
+
+Without it a player cannot know how long the asset is: no seek bar, no end, and no way to tell a truncated manifest from a complete one.
+
+### `dash/duration-vs-timeline`
+
+**@mediaPresentationDuration matches the segment timeline** · warning
+
+The declared duration and the segments have to describe the same presentation. Claiming more media than the timeline addresses makes players stall at the end or seek into nothing; claiming less leaves the tail unreachable.
+
+### `dash/timeline-gap`
+
+**SegmentTimeline entries chain without gaps or overlaps** · error
+
+Each <S> starts where the previous one ended unless @t says otherwise. A @t that disagrees is a hole in the presentation — or two segments claiming the same seconds — and it is invisible until you add the durations up.
+
+### `dash/dynamic-without-utctiming`
+
+**A dynamic MPD carries UTCTiming** · warning
+
+A live DASH client computes which segment exists from its own clock and @availabilityStartTime. Without a UTCTiming element to synchronise to, a device whose clock is seconds off requests segments that do not exist yet, and buffers for reasons no server log explains.
+
+### `dash/adaptationset-not-aligned`
+
+**Adaptation sets with several representations declare @segmentAlignment** · warning
+
+A player may only switch representations at aligned boundaries. Without the flag it has to assume it cannot, and the adaptation the ladder was built for does not happen.
+
+### `dash/missing-bandwidth`
+
+**Every representation declares @bandwidth** · error
+
+@bandwidth is required by the schema and is what adaptation ranks representations on. Without it a representation cannot be chosen deliberately.
+
+### `dash/missing-codecs`
+
+**Representations declare @codecs** · warning
+
+Without @codecs — on the representation or inherited from the adaptation set — a player has to fetch media to find out whether it can decode it, which costs startup time and sometimes fails outright.
+
+### `dash/segment-template-without-number`
+
+**A segment template addresses more than one segment** · error
+
+A @media template with neither $Number$ nor $Time$ resolves every segment to the same URL: the player fetches the first segment forever.
+
+### `dash/segment-template-without-init`
+
+**A segment template names an initialisation segment** · warning
+
+Fragmented MP4 needs the initialisation segment to configure the decoder. Without @initialization the first media segment arrives with nothing to decode it.

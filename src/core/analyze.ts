@@ -96,7 +96,7 @@ export interface AnalyzeOptions {
 export interface RuleDoc {
   id: string;
   severity: Severity;
-  scope: 'syntax' | 'master' | 'media' | 'cross';
+  scope: 'syntax' | 'master' | 'media' | 'cross' | 'dash';
   title: string;
   rationale: string;
 }
@@ -477,6 +477,94 @@ export const RULES: RuleDoc[] = [
     title: 'BANDWIDTH covers the bitrate the rendition declares',
     rationale:
       'BANDWIDTH is the peak a rendition can reach, and ABR provisions against it. A playlist whose own EXT-X-BITRATE is higher than the master promises makes the player pick a rung the connection cannot carry, and rebuffer.',
+  },
+  {
+    id: 'dash/not-an-mpd',
+    severity: 'error',
+    scope: 'dash',
+    title: 'The file is an MPD',
+    rationale:
+      'A .mpd whose root is not <MPD> is nearly always an error page or a redirect saved by hand. Saying so once is more use than reporting every attribute it does not have.',
+  },
+  {
+    id: 'dash/malformed-xml',
+    severity: 'error',
+    scope: 'dash',
+    title: 'The manifest is well-formed XML',
+    rationale:
+      'Players parse an MPD strictly. A document that does not close its elements is not read at all, however good the rest of the packaging is.',
+  },
+  {
+    id: 'dash/missing-presentation-duration',
+    severity: 'warning',
+    scope: 'dash',
+    title: 'A static MPD declares @mediaPresentationDuration',
+    rationale:
+      'Without it a player cannot know how long the asset is: no seek bar, no end, and no way to tell a truncated manifest from a complete one.',
+  },
+  {
+    id: 'dash/duration-vs-timeline',
+    severity: 'warning',
+    scope: 'dash',
+    title: '@mediaPresentationDuration matches the segment timeline',
+    rationale:
+      'The declared duration and the segments have to describe the same presentation. Claiming more media than the timeline addresses makes players stall at the end or seek into nothing; claiming less leaves the tail unreachable.',
+  },
+  {
+    id: 'dash/timeline-gap',
+    severity: 'error',
+    scope: 'dash',
+    title: 'SegmentTimeline entries chain without gaps or overlaps',
+    rationale:
+      'Each <S> starts where the previous one ended unless @t says otherwise. A @t that disagrees is a hole in the presentation — or two segments claiming the same seconds — and it is invisible until you add the durations up.',
+  },
+  {
+    id: 'dash/dynamic-without-utctiming',
+    severity: 'warning',
+    scope: 'dash',
+    title: 'A dynamic MPD carries UTCTiming',
+    rationale:
+      'A live DASH client computes which segment exists from its own clock and @availabilityStartTime. Without a UTCTiming element to synchronise to, a device whose clock is seconds off requests segments that do not exist yet, and buffers for reasons no server log explains.',
+  },
+  {
+    id: 'dash/adaptationset-not-aligned',
+    severity: 'warning',
+    scope: 'dash',
+    title: 'Adaptation sets with several representations declare @segmentAlignment',
+    rationale:
+      'A player may only switch representations at aligned boundaries. Without the flag it has to assume it cannot, and the adaptation the ladder was built for does not happen.',
+  },
+  {
+    id: 'dash/missing-bandwidth',
+    severity: 'error',
+    scope: 'dash',
+    title: 'Every representation declares @bandwidth',
+    rationale:
+      '@bandwidth is required by the schema and is what adaptation ranks representations on. Without it a representation cannot be chosen deliberately.',
+  },
+  {
+    id: 'dash/missing-codecs',
+    severity: 'warning',
+    scope: 'dash',
+    title: 'Representations declare @codecs',
+    rationale:
+      'Without @codecs — on the representation or inherited from the adaptation set — a player has to fetch media to find out whether it can decode it, which costs startup time and sometimes fails outright.',
+  },
+  {
+    id: 'dash/segment-template-without-number',
+    severity: 'error',
+    scope: 'dash',
+    title: 'A segment template addresses more than one segment',
+    rationale:
+      'A @media template with neither $Number$ nor $Time$ resolves every segment to the same URL: the player fetches the first segment forever.',
+  },
+  {
+    id: 'dash/segment-template-without-init',
+    severity: 'warning',
+    scope: 'dash',
+    title: 'A segment template names an initialisation segment',
+    rationale:
+      'Fragmented MP4 needs the initialisation segment to configure the decoder. Without @initialization the first media segment arrives with nothing to decode it.',
   },
 ];
 

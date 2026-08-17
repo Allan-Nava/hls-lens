@@ -3,6 +3,21 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.8.0] - 2026-08-17
+
+DASH. 47 → 58 regole, e ancora **zero dipendenze**: il lettore XML è scritto qui.
+
+### Aggiunto
+
+- **`src/core/xml.ts`**: lettore XML minimo — elementi, attributi, annidamento, indici di riga 0-based come tutto il resto del core. Non fa entity expansion oltre le cinque predefinite, né DTD, né risoluzione dei namespace: un MPD che ne ha bisogno viene **segnalato**, non indovinato. Non torna mai un'eccezione su un documento malformato, restituisce quello che è riuscito a leggere più gli errori — il chiamante è un linter, e "il file è rotto qui" è la cosa più utile che possa dire. Un `>` dentro un valore quotato non chiude il tag (c'è il test).
+- **`src/core/dash.ts`**: `parseIsoDuration` (PT30S, PT1M30.5S, P1DT2H3M4S; anni e mesi deliberatamente no — non hanno una lunghezza fissa) e `analyzeMpd`, con **11 regole `dash/*`**:
+  - `dash/timeline-gap`: gli `<S>` si concatenano, ognuno parte dove finisce il precedente se non lo dice con `@t`. Un `@t` che non torna è un buco nella presentazione — o due segmenti che rivendicano gli stessi secondi — ed è invisibile finché non sommi le durate.
+  - `dash/duration-vs-timeline`: `@mediaPresentationDuration` contro quello che la timeline copre davvero.
+  - `dash/dynamic-without-utctiming`: un client DASH live calcola quale segmento esiste dal **proprio** orologio più `@availabilityStartTime`. Senza `<UTCTiming>` un device con l'orologio indietro di qualche secondo chiede segmenti che non esistono ancora, e bufferizza per un motivo che nessun log del server spiega.
+  - `dash/adaptationset-not-aligned`, `dash/missing-bandwidth`, `dash/missing-codecs`, `dash/segment-template-without-number` (un `@media` senza `$Number$` né `$Time$` risolve ogni segmento allo stesso URL), `dash/segment-template-without-init`, `dash/malformed-xml`, `dash/missing-presentation-duration`.
+  - `dash/not-an-mpd`: un `.mpd` la cui radice non è `<MPD>` è quasi sempre una pagina d'errore salvata a mano. Dirlo una volta è più utile che riportare trenta attributi mancanti.
+- **Linguaggio `dash-mpd`** (`.mpd`) e diagnostics sugli MPD nello stesso pannello Problems, con gli stessi filtri `minSeverity`/`skip`. Fixture `test/fixtures/dash-broken.mpd` testata regola per regola.
+
 ## [0.7.0] - 2026-08-17
 
 Guardare uno stream muoversi, invece di fotografarlo.
@@ -150,6 +165,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.8.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.5.0
