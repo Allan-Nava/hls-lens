@@ -2,7 +2,7 @@
 
 # Rules
 
-HLS Lens ships 33 rules. Each one reads the manifest only — the claims — and points at the line you have to fix.
+HLS Lens ships 39 rules. Each one reads the manifest only — the claims — and points at the line you have to fix.
 For the defects that need the segment bytes (a gap that no `EXT-X-DISCONTINUITY` declares, a 1080p rung that codes 720p),
 run the deep check, which brings [segcheck](https://github.com/Allan-Nava/segcheck) findings into the same Problems panel.
 
@@ -30,6 +30,8 @@ Ids are stable: they are what `hlsLens.diagnostics.skip` pins.
 | [`master/plaintext-uri`](#masterplaintext-uri) | warning | Child playlists are addressed over HTTPS |
 | [`master/average-bandwidth-missing`](#masteraverage-bandwidth-missing) | hint | Variants declare AVERAGE-BANDWIDTH |
 | [`master/bandwidth-not-ascending`](#masterbandwidth-not-ascending) | hint | Variants are listed in ascending BANDWIDTH |
+| [`master/codecs-resolution-mismatch`](#mastercodecs-resolution-mismatch) | warning | The CODECS level can carry the declared RESOLUTION and FRAME-RATE |
+| [`master/ladder-spacing`](#masterladder-spacing) | hint | Consecutive rungs are far enough apart, and not too far |
 | [`media/missing-target-duration`](#mediamissing-target-duration) | error | The media playlist declares EXT-X-TARGETDURATION |
 | [`media/extinf-exceeds-target`](#mediaextinf-exceeds-target) | error | No segment is longer than EXT-X-TARGETDURATION |
 | [`media/target-duration-overstated`](#mediatarget-duration-overstated) | warning | EXT-X-TARGETDURATION is close to the real segment duration |
@@ -46,6 +48,10 @@ Ids are stable: they are what `hlsLens.diagnostics.skip` pins.
 | [`media/gap-segments`](#mediagap-segments) | warning | The playlist has no EXT-X-GAP segments |
 | [`media/short-live-window`](#mediashort-live-window) | warning | A live playlist holds at least three target durations |
 | [`media/plaintext-segment`](#mediaplaintext-segment) | warning | Segments are addressed over HTTPS |
+| [`media/daterange`](#mediadaterange) | warning | EXT-X-DATERANGE ranges are well formed and do not overlap |
+| [`media/key-rotation`](#mediakey-rotation) | hint | A long-running live stream rotates its content key |
+| [`media/key-dropped`](#mediakey-dropped) | warning | Encryption is not switched off part-way through |
+| [`media/iframe-playlist-shape`](#mediaiframe-playlist-shape) | warning | An I-frames-only playlist addresses byte ranges |
 
 ## Structure
 
@@ -157,6 +163,18 @@ BANDWIDTH is the peak a player must sustain; AVERAGE-BANDWIDTH is what the rendi
 
 Some players start on the first variant listed. An unordered ladder makes the initial pick arbitrary, which shows up as a stream that sometimes starts at the top rung on a slow connection.
 
+### `master/codecs-resolution-mismatch`
+
+**The CODECS level can carry the declared RESOLUTION and FRAME-RATE** · warning
+
+An H.264 level caps the frame size and the macroblock rate. A rung that advertises avc1.4d401e (Main@3.0, 1620 macroblocks) and RESOLUTION=1920x1080 is telling players it cannot decode what it is offering: strict devices — TVs and set-top boxes, rarely the browser you tested in — refuse the rung and fall back, or fail.
+
+### `master/ladder-spacing`
+
+**Consecutive rungs are far enough apart, and not too far** · hint
+
+Rungs less than about 1.5x apart in bitrate are indistinguishable to ABR: it pays for a second encode and a second cache entry that no switching decision can use. A gap wider than about 2.5x is the opposite problem — when the connection cannot hold the upper rung there is nothing to fall back to except a much worse picture.
+
 ## Media playlist
 
 Rules about segments, timing, keys and the live window.
@@ -256,3 +274,27 @@ A player buffers a multiple of the target duration before it starts. A window sh
 **Segments are addressed over HTTPS** · warning
 
 An http:// segment URI in an https:// playlist is blocked as mixed content in browsers, and readable in transit everywhere else.
+
+### `media/daterange`
+
+**EXT-X-DATERANGE ranges are well formed and do not overlap** · warning
+
+Ad breaks are described by these ranges, and a player acts on them: a DURATION that disagrees with END-DATE, two ranges of the same CLASS covering the same seconds, or a CUE-IN with nothing to close all end the same way — an ad that does not start, does not end, or is billed and never shown.
+
+### `media/key-rotation`
+
+**A long-running live stream rotates its content key** · hint
+
+One key for the whole window means one key for the whole event: a key extracted from a browser once decrypts everything that follows, indefinitely. Rotation puts a bound on what a leak is worth.
+
+### `media/key-dropped`
+
+**Encryption is not switched off part-way through** · warning
+
+An EXT-X-KEY:METHOD=NONE after encrypted segments leaves the rest of the playlist in the clear. It is almost always a packager restarting without its key configuration rather than a deliberate decision, and nothing else in the stream complains.
+
+### `media/iframe-playlist-shape`
+
+**An I-frames-only playlist addresses byte ranges** · warning
+
+EXT-X-I-FRAMES-ONLY exists so a player can fetch single frames while scrubbing. Segments without EXT-X-BYTERANGE make it download a whole segment per thumbnail, which is the cost trick play was meant to avoid.

@@ -43,7 +43,7 @@ code test/fixtures/media-live-broken.m3u8   # 6 regole devono accendersi
 
 - `src/core/attrs.ts` — attribute list di RFC 8216 §4.2 parsate carattere per carattere, più gli accessor tipati (`attrInt`, `attrFloat`, `attrResolution`, `attrList`, `attrBool`).
 - `src/core/playlist.ts` — parser: `Playlist` con `variants`, `renditions`, `segments`, `keys`, `maps`, `serverControl`, gli EXTINF/STREAM-INF orfani e **l'indice di riga di tutto** (0-based). Set dei tag noti (per `syntax/unknown-tag`) e dei tag con attribute list.
-- `src/core/analyze.ts` — le 33 regole + `RULES` (il catalogo documentato) + la tabella `VERSION_REQUIREMENTS` tag→versione minima. Ordine dei finding: severità, poi riga.
+- `src/core/analyze.ts` — le 39 regole + `RULES` (il catalogo documentato) + la tabella `VERSION_REQUIREMENTS` tag→versione minima. Ordine dei finding: severità, poi riga.
 - `src/core/ladder.ts` — modello dell'albero (`buildLadder`, `renditionRows`, `ladderSummary`) e formattazione (`formatBandwidth`, `formatResolution`).
 - `src/core/uri.ts` — `resolveUri`/`baseOf`/`isRemote`/`isPlainHttp`/`looksLikePlaylistUri`/`looksLikeFmp4Uri`.
 - `src/core/backlog.ts` — `BACKLOG.md` come dato: `parseBacklog`, `duplicateIds`, `sectionState`, `backlogStats`, `renderRoadmap`, `orphanMilestones` e la mappatura verso le issue (`markerOf`/`idFromBody`/`issueTitle`/`issueBody`). Non c'entra con l'estensione: sta nel core perché è logica, e la logica si testa.

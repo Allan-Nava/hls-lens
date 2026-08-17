@@ -10,7 +10,7 @@
 
 An `.m3u8` file is a list of claims, and a text editor shows you all of them equally. HLS Lens reads the manifest the way someone who has debugged a stream reads it: a wildcard where a hostname should be, a segment longer than the target duration it declares, a `PROGRAM-DATE-TIME` that walks away from the media timeline, an fMP4 playlist with no init segment, a content key fetched over plaintext HTTP.
 
-**33 rules, on the line you have to fix**, while you edit:
+**39 rules, on the line you have to fix**, while you edit:
 
 ```m3u8
 #EXTM3U
@@ -37,8 +37,8 @@ Plus the ladder as a tree, clickable child playlists, and — when you point it 
 ## The rules, in one paragraph
 
 Five **structure** rules (missing `#EXTM3U`, a BOM before it, a file that is both master and media, a misspelled tag — which players silently ignore, so a typo'd `EXT-X-TARGETDURATON` reads as *no target duration at all* — and an `EXT-X-VERSION` lower than the tags in use).
-Twelve **master playlist** rules (missing `BANDWIDTH`/`RESOLUTION`/`CODECS`, duplicate `BANDWIDTH`, a variant with no URI, an `AUDIO`/`SUBTITLES` group nothing declares, groups with no default or two defaults, no I-frame playlist for trick play, plaintext child URIs, missing `AVERAGE-BANDWIDTH`, a ladder that is not in ascending order).
-Sixteen **media playlist** rules (no `TARGETDURATION`, a segment longer than it, a target duration far above the real segments, `PLAYLIST-TYPE:VOD` with no `EXT-X-ENDLIST`, fMP4 with no `EXT-X-MAP`, a content key over HTTP, `PROGRAM-DATE-TIME` going backwards or drifting from the `EXTINF` sum, a live playlist with no wall clock, discontinuities with no `DISCONTINUITY-SEQUENCE`, an `EXTINF` with no URI, `EXT-X-PART` without the `SERVER-CONTROL` that makes parts worth serving, a `HOLD-BACK` under three target durations, `EXT-X-GAP` segments, a live window under three target durations, plaintext segment URIs).
+Fourteen **master playlist** rules (missing `BANDWIDTH`/`RESOLUTION`/`CODECS`, duplicate `BANDWIDTH`, a variant with no URI, an `AUDIO`/`SUBTITLES` group nothing declares, groups with no default or two defaults, no I-frame playlist for trick play, plaintext child URIs, missing `AVERAGE-BANDWIDTH`, a ladder that is not in ascending order, a `CODECS` level that cannot carry the declared `RESOLUTION` and `FRAME-RATE`, and rungs so close together that ABR cannot tell them apart — or so far apart that there is nothing to fall back to).
+Twenty **media playlist** rules (no `TARGETDURATION`, a segment longer than it, a target duration far above the real segments, `PLAYLIST-TYPE:VOD` with no `EXT-X-ENDLIST`, fMP4 with no `EXT-X-MAP`, a content key over HTTP, `PROGRAM-DATE-TIME` going backwards or drifting from the `EXTINF` sum, a live playlist with no wall clock, discontinuities with no `DISCONTINUITY-SEQUENCE`, an `EXTINF` with no URI, `EXT-X-PART` without the `SERVER-CONTROL` that makes parts worth serving, a `HOLD-BACK` under three target durations, `EXT-X-GAP` segments, a live window under three target durations, plaintext segment URIs, malformed or overlapping `EXT-X-DATERANGE` ad breaks, a live window a single content key covers, encryption switched off part-way through, and an I-frames-only playlist that addresses whole segments instead of byte ranges).
 
 Each one is documented with *why it matters*, not just what it matches: see [docs/RULES.md](docs/RULES.md).
 
@@ -48,8 +48,8 @@ From the Marketplace: search **HLS Lens**. Or build the `.vsix` yourself:
 
 ```bash
 npm install
-npm run package        # → hls-lens-0.3.3.vsix
-code --install-extension hls-lens-0.3.3.vsix
+npm run package        # → hls-lens-0.4.0.vsix
+code --install-extension hls-lens-0.4.0.vsix
 ```
 
 For the deep check, install segcheck (`brew install --cask allan-nava/tap/segcheck`, or a binary from [its releases](https://github.com/Allan-Nava/segcheck/releases)) and point `hlsLens.segcheck.path` at it if it is not on your `PATH`.
@@ -83,7 +83,7 @@ For the deep check, install segcheck (`brew install --cask allan-nava/tap/segche
 
 ## Design notes
 
-- **The logic is a pure core.** `src/core/` never imports `vscode`: the parser, the 33 rules, the ladder model, URI resolution, the segcheck bridge — and even the backlog parser and the icon generator — are plain TypeScript with tests. `src/extension.ts` only translates that model into diagnostics, tree items and links, and the scripts in `scripts/` are I/O over the same core.
+- **The logic is a pure core.** `src/core/` never imports `vscode`: the parser, the 39 rules, the ladder model, URI resolution, the segcheck bridge — and even the backlog parser and the icon generator — are plain TypeScript with tests. `src/extension.ts` only translates that model into diagnostics, tree items and links, and the scripts in `scripts/` are I/O over the same core.
 - **Line numbers everywhere, 0-based.** The parser keeps the line index of every tag, URI, `EXTINF` and `PROGRAM-DATE-TIME` it decodes, because a finding that cannot point at a line is just a linter you have to read twice.
 - **Attribute lists are parsed, not split.** `CODECS="avc1.4d401f,mp4a.40.2"` is one value with a comma in it; splitting the line on commas is how a manifest gets reported as codec-less.
 - **No dependencies.** Not one runtime dependency; the fetcher is `node:http(s)` and even the Marketplace icon is generated (`npm run icon`) rather than pulled from a toolchain.
@@ -110,7 +110,7 @@ to Open VSX:
 
 ```bash
 # after the changelog entry and the version bump
-git tag -a v0.3.3 -m "Release 0.3.3" && git push origin main --follow-tags
+git tag -a v0.4.0 -m "Release 0.4.0" && git push origin main --follow-tags
 ```
 
 The two store credentials live in the `marketplace` environment, which is also where you can require

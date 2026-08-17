@@ -99,7 +99,7 @@ async function main(): Promise<void> {
     assert.strictEqual(v!.bandwidth, 6100000);
     assert.strictEqual(v!.averageBandwidth, 5600000);
     assert.deepStrictEqual(v!.resolution, { width: 1920, height: 1080 });
-    assert.deepStrictEqual(v!.codecs, ['avc1.640028', 'mp4a.40.2']);
+    assert.deepStrictEqual(v!.codecs, ['avc1.64002a', 'mp4a.40.2']);
     assert.strictEqual(v!.frameRate, 50);
     assert.strictEqual(v!.audio, 'aac-128');
     assert.strictEqual(v!.iframeOnly, false);
@@ -412,7 +412,7 @@ async function main(): Promise<void> {
     );
     assert.strictEqual(video[3].label, '1080p');
     assert.ok(video[3].description.includes('6.10 Mbps'));
-    assert.ok(video[3].tooltip.includes('avc1.640028'));
+    assert.ok(video[3].tooltip.includes('avc1.64002a'));
     assert.strictEqual(video[3].uri, 'video/1080p/index.m3u8');
     assert.strictEqual(rows[rows.length - 1].iframeOnly, true, 'the I-frame stream sorts last');
   });
@@ -577,6 +577,262 @@ async function main(): Promise<void> {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+  });
+
+  // ------------------------------------------------------------- ladder quality
+  await test('master/codecs-resolution-mismatch catches a level that cannot carry the picture', () => {
+    // avc1.4d401e is Main@3.0: 1620 macroblocks per frame, 40500 per second.
+    // 1080p is 8160 macroblocks, so the rung promises a picture its own codec
+    // string says it cannot decode.
+    const pl = parsePlaylist(
+      [
+        '#EXTM3U',
+        '#EXT-X-STREAM-INF:BANDWIDTH=6100000,RESOLUTION=1920x1080,FRAME-RATE=50.000,CODECS="avc1.4d401e,mp4a.40.2"',
+        'high.m3u8',
+        // avc1.4d401f is Main@3.1: exactly 3600 macroblocks and 108000 per second,
+        // which is 720p50 to the boundary and must not fire.
+        '#EXT-X-STREAM-INF:BANDWIDTH=2400000,RESOLUTION=1280x720,FRAME-RATE=30.000,CODECS="avc1.4d401f,mp4a.40.2"',
+        'mid.m3u8',
+      ].join('\n'),
+    );
+    const found = analyze(pl).filter((f) => f.rule === 'master/codecs-resolution-mismatch');
+    assert.strictEqual(found.length, 1, 'only the 1080p rung is impossible');
+    assert.strictEqual(found[0].line, 1);
+    assert.match(found[0].message, /3\.0/, 'the message names the level it decoded');
+    assert.strictEqual(found[0].severity, 'warning');
+  });
+
+  await test('master/codecs-resolution-mismatch separates the frame rate from the frame size', () => {
+    // 720p fits Main@3.0 by size (3600 > 1620? no — 3600 macroblocks exceeds it).
+    // Use 480p, which fits 3.0 by size but not at 60fps: 1200 MBs * 60 = 72000 > 40500.
+    const pl = parsePlaylist(
+      '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1200000,RESOLUTION=854x480,FRAME-RATE=60.000,CODECS="avc1.4d401e"\na.m3u8\n',
+    );
+    const found = analyze(pl).filter((f) => f.rule === 'master/codecs-resolution-mismatch');
+    assert.strictEqual(found.length, 1);
+    assert.match(found[0].message, /60/, 'the frame rate is what breaks it');
+
+    const slower = parsePlaylist(
+      '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1200000,RESOLUTION=854x480,FRAME-RATE=25.000,CODECS="avc1.4d401e"\na.m3u8\n',
+    );
+    assert.deepStrictEqual(
+      analyze(slower).filter((f) => f.rule === 'master/codecs-resolution-mismatch'),
+      [],
+      'the same rung at 25fps is legal',
+    );
+  });
+
+  await test('master/codecs-resolution-mismatch stays quiet on codecs it cannot decode itself', () => {
+    // Never invent a finding: HEVC and an unparseable string mean "no opinion".
+    for (const codecs of ['hvc1.2.4.L120.90', 'avc1', 'avc1.xxxxxx', 'mp4a.40.2']) {
+      const pl = parsePlaylist(
+        `#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=6100000,RESOLUTION=1920x1080,CODECS="${codecs}"\na.m3u8\n`,
+      );
+      assert.deepStrictEqual(
+        analyze(pl).filter((f) => f.rule === 'master/codecs-resolution-mismatch'),
+        [],
+        `${codecs} produces no finding`,
+      );
+    }
+  });
+
+  await test('master/ladder-spacing reports rungs too close together and gaps too wide', () => {
+    const pl = parsePlaylist(
+      [
+        '#EXTM3U',
+        '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360,CODECS="avc1.4d401e"',
+        'a.m3u8',
+        '#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=854x480,CODECS="avc1.4d401e"', // 1.25x: indistinguishable
+        'b.m3u8',
+        '#EXT-X-STREAM-INF:BANDWIDTH=3200000,RESOLUTION=1280x720,CODECS="avc1.4d401f"', // 3.2x: nothing between
+        'c.m3u8',
+      ].join('\n'),
+    );
+    const found = analyze(pl).filter((f) => f.rule === 'master/ladder-spacing');
+    assert.strictEqual(found.length, 2);
+    assert.strictEqual(found[0].line, 3, 'the close rung is reported on its own line');
+    assert.match(found[0].message, /1\.25/);
+    assert.strictEqual(found[1].line, 5);
+    assert.match(found[1].message, /3\.2/);
+    assert.strictEqual(found[0].severity, 'hint', 'ladder shape is advice, not a broken stream');
+  });
+
+  await test('master/ladder-spacing accepts a well-spaced ladder and ignores I-frame streams', () => {
+    const pl = parsePlaylist(
+      [
+        '#EXTM3U',
+        '#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360,CODECS="avc1.4d401e"',
+        'a.m3u8',
+        '#EXT-X-STREAM-INF:BANDWIDTH=1600000,RESOLUTION=854x480,CODECS="avc1.4d401e"',
+        'b.m3u8',
+        '#EXT-X-STREAM-INF:BANDWIDTH=3200000,RESOLUTION=1280x720,CODECS="avc1.4d401f"',
+        'c.m3u8',
+        '#EXT-X-I-FRAME-STREAM-INF:BANDWIDTH=94000,URI="iframe.m3u8"',
+      ].join('\n'),
+    );
+    assert.deepStrictEqual(analyze(pl).filter((f) => f.rule === 'master/ladder-spacing'), []);
+  });
+
+  // --------------------------------------------------------------- ad breaks etc
+  await test('media/daterange catches a duration that disagrees with END-DATE', () => {
+    const pl = parsePlaylist(
+      [
+        '#EXTM3U',
+        '#EXT-X-TARGETDURATION:6',
+        '#EXT-X-DATERANGE:ID="ad-1",START-DATE="2026-08-17T10:00:00.000Z",END-DATE="2026-08-17T10:00:30.000Z",DURATION=15.0',
+        '#EXTINF:6.000,',
+        'a.ts',
+        '#EXT-X-ENDLIST',
+      ].join('\n'),
+    );
+    const found = analyze(pl).filter((f) => f.rule === 'media/daterange');
+    assert.strictEqual(found.length, 1);
+    assert.strictEqual(found[0].line, 2);
+    assert.match(found[0].message, /15|30/, 'the message carries both numbers');
+  });
+
+  await test('media/daterange catches overlapping ranges and a CUE-IN with no CUE-OUT', () => {
+    const overlapping = parsePlaylist(
+      [
+        '#EXTM3U',
+        '#EXT-X-TARGETDURATION:6',
+        '#EXT-X-DATERANGE:ID="ad-1",CLASS="ads",START-DATE="2026-08-17T10:00:00.000Z",DURATION=30.0',
+        '#EXT-X-DATERANGE:ID="ad-2",CLASS="ads",START-DATE="2026-08-17T10:00:20.000Z",DURATION=30.0',
+        '#EXTINF:6.000,',
+        'a.ts',
+        '#EXT-X-ENDLIST',
+      ].join('\n'),
+    );
+    const overlap = analyze(overlapping).filter((f) => f.rule === 'media/daterange');
+    assert.strictEqual(overlap.length, 1);
+    assert.strictEqual(overlap[0].line, 3, 'reported on the range that starts inside the previous one');
+    assert.match(overlap[0].message, /overlap/i);
+
+    const cueIn = parsePlaylist(
+      [
+        '#EXTM3U',
+        '#EXT-X-TARGETDURATION:6',
+        '#EXT-X-DATERANGE:ID="ad-2",START-DATE="2026-08-17T10:00:30.000Z",SCTE35-IN=0xFC30',
+        '#EXTINF:6.000,',
+        'a.ts',
+        '#EXT-X-ENDLIST',
+      ].join('\n'),
+    );
+    const dangling = analyze(cueIn).filter((f) => f.rule === 'media/daterange');
+    assert.strictEqual(dangling.length, 1);
+    assert.match(dangling[0].message, /SCTE35-IN|CUE-IN/i);
+  });
+
+  await test('media/daterange accepts a well-formed ad break', () => {
+    const pl = parsePlaylist(
+      [
+        '#EXTM3U',
+        '#EXT-X-TARGETDURATION:6',
+        '#EXT-X-DATERANGE:ID="ad-1",CLASS="ads",START-DATE="2026-08-17T10:00:00.000Z",END-DATE="2026-08-17T10:00:30.000Z",DURATION=30.0,SCTE35-OUT=0xFC30',
+        '#EXT-X-DATERANGE:ID="ad-1-end",CLASS="ads",START-DATE="2026-08-17T10:00:30.000Z",SCTE35-IN=0xFC30',
+        '#EXTINF:6.000,',
+        'a.ts',
+        '#EXT-X-ENDLIST',
+      ].join('\n'),
+    );
+    assert.deepStrictEqual(analyze(pl).filter((f) => f.rule === 'media/daterange'), []);
+  });
+
+  // ---------------------------------------------------------------- keys, again
+  await test('media/key-rotation fires on a live window a single key covers, and not on VOD', () => {
+    const live = [
+      '#EXTM3U',
+      '#EXT-X-VERSION:3',
+      '#EXT-X-TARGETDURATION:6',
+      '#EXT-X-MEDIA-SEQUENCE:1200',
+      '#EXT-X-KEY:METHOD=AES-128,URI="https://k.example/key?rot=1"',
+    ];
+    for (let i = 0; i < 10; i++) live.push('#EXTINF:6.000,', `seg-${i}.ts`);
+    const found = analyze(parsePlaylist(live.join('\n'))).filter((f) => f.rule === 'media/key-rotation');
+    assert.strictEqual(found.length, 1);
+    assert.strictEqual(found[0].severity, 'hint');
+
+    const vod = [...live, '#EXT-X-ENDLIST'].join('\n');
+    assert.deepStrictEqual(
+      analyze(parsePlaylist(vod)).filter((f) => f.rule === 'media/key-rotation'),
+      [],
+      'a finished VOD asset has nothing to rotate',
+    );
+
+    const rotating = [...live];
+    rotating.splice(12, 0, '#EXT-X-KEY:METHOD=AES-128,URI="https://k.example/key?rot=2"');
+    assert.deepStrictEqual(
+      analyze(parsePlaylist(rotating.join('\n'))).filter((f) => f.rule === 'media/key-rotation'),
+      [],
+      'a second key URI in the window is rotation',
+    );
+  });
+
+  await test('media/key-dropped catches METHOD=NONE after encrypted segments', () => {
+    const pl = parsePlaylist(
+      [
+        '#EXTM3U',
+        '#EXT-X-TARGETDURATION:6',
+        '#EXT-X-KEY:METHOD=AES-128,URI="https://k.example/key"',
+        '#EXTINF:6.000,',
+        'a.ts',
+        '#EXT-X-KEY:METHOD=NONE',
+        '#EXTINF:6.000,',
+        'b.ts',
+        '#EXT-X-ENDLIST',
+      ].join('\n'),
+    );
+    const found = analyze(pl).filter((f) => f.rule === 'media/key-dropped');
+    assert.strictEqual(found.length, 1);
+    assert.strictEqual(found[0].line, 5, 'the METHOD=NONE line is the one to look at');
+    assert.strictEqual(found[0].severity, 'warning');
+
+    const neverEncrypted = parsePlaylist(
+      '#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-KEY:METHOD=NONE\n#EXTINF:6.000,\na.ts\n#EXT-X-ENDLIST\n',
+    );
+    assert.deepStrictEqual(
+      analyze(neverEncrypted).filter((f) => f.rule === 'media/key-dropped'),
+      [],
+      'METHOD=NONE on a playlist that was never encrypted is just clear content',
+    );
+  });
+
+  await test('media/iframe-playlist-shape wants byte ranges in an I-frames-only playlist', () => {
+    const whole = parsePlaylist(
+      [
+        '#EXTM3U',
+        '#EXT-X-VERSION:4',
+        '#EXT-X-TARGETDURATION:6',
+        '#EXT-X-I-FRAMES-ONLY',
+        '#EXTINF:6.000,',
+        'iframe-1.ts',
+        '#EXT-X-ENDLIST',
+      ].join('\n'),
+    );
+    const found = analyze(whole).filter((f) => f.rule === 'media/iframe-playlist-shape');
+    assert.strictEqual(found.length, 1);
+    assert.strictEqual(found[0].line, 5);
+
+    const ranged = parsePlaylist(
+      [
+        '#EXTM3U',
+        '#EXT-X-VERSION:4',
+        '#EXT-X-TARGETDURATION:6',
+        '#EXT-X-I-FRAMES-ONLY',
+        '#EXTINF:6.000,',
+        '#EXT-X-BYTERANGE:12345@0',
+        'video.ts',
+        '#EXT-X-ENDLIST',
+      ].join('\n'),
+    );
+    assert.deepStrictEqual(analyze(ranged).filter((f) => f.rule === 'media/iframe-playlist-shape'), []);
+
+    const ordinary = parsePlaylist(fixture('media-vod-clean.m3u8'));
+    assert.deepStrictEqual(
+      analyze(ordinary).filter((f) => f.rule === 'media/iframe-playlist-shape'),
+      [],
+      'a normal media playlist is not an I-frame playlist',
+    );
   });
 
   // ----------------------------------------------------------------------- icon

@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**6 of 21 items done** · `██░░░░░░░░` 29%
+**11 of 21 items done** · `█████░░░░░` 52%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -15,8 +15,9 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [v0.3.0 — Publishing automation](#v030--publishing-automation) | ✅ shipped | 1/1 |
 | [v0.3.2 — Reproducible gates](#v032--reproducible-gates) | ✅ shipped | 2/2 |
 | [v0.3.3 — Icon generator under test](#v033--icon-generator-under-test) | ✅ shipped | 1/1 |
+| [v0.4.0 — Rules that pay for themselves](#v040--rules-that-pay-for-themselves) | ✅ shipped | 5/5 |
 | [Docs and site](#docs-and-site) | ⏳ planned | 0/1 |
-| [Rules that pay for themselves](#rules-that-pay-for-themselves) | ⏳ planned | 0/6 |
+| [Rules that pay for themselves](#rules-that-pay-for-themselves) | ⏳ planned | 0/1 |
 | [Editor](#editor) | ⏳ planned | 0/3 |
 | [More than one file at a time](#more-than-one-file-at-a-time) | ⏳ planned | 0/4 |
 | [Later — DASH](#later--dash) | ⏳ planned | 0/1 |
@@ -60,6 +61,18 @@ The first push turned the CI red on every run and left leftovers on the issue tr
 
 - [x] **HL-20 — The icon generator moves into the tested core**: `src/core/png.ts` holds `drawIcon`, `encodePng`/`decodePng` and `comparePixels`, with tests that assert the mark's own pixels, the encode/decode round-trip, the rejection of a file the generator did not write, and that two compression levels of the same image compare equal. `scripts/make-icon.ts` is now I/O only, bundled like the other tools. Written test-first: the truncated-PNG test failed on a Buffer `RangeError` and produced a real fix, a chunk-length guard.
 
+## v0.4.0 — Rules that pay for themselves
+
+Six findings a stream engineer would otherwise catch by reading the manifest twice, all computable from the declarations alone.
+
+✅ shipped · 5 of 5 · `██████████`
+
+- [x] **HL-1 — `master/codecs-resolution-mismatch`**: decodes the H.264 level out of the `avc1`/`avc3` string and compares it with the declared `RESOLUTION` and `FRAME-RATE` against the macroblock limits of ITU-T H.264 table A-1. Only avc1/avc3: for HEVC, AV1 or a string that does not parse the rule has no opinion rather than a guess. It found two real defects in this repository's own "clean" fixture — 720p50 on Main@3.1 and 1080p50 on High@4.0.
+- [x] **HL-2 — `master/ladder-spacing`**: rungs under 1.5× apart (ABR cannot distinguish them, and the second encode is paid for twice) and gaps over 2.5× (nothing to fall back to). A hint: ladder shape is judgement, not a broken stream.
+- [x] **HL-4 — `media/daterange`**: `EXT-X-DATERANGE` with no usable `START-DATE`, a `DURATION` that disagrees with `END-DATE`, two ranges of the same `CLASS` covering the same seconds, and an `SCTE35-IN`/`CUE-IN` with nothing open to close.
+- [x] **HL-5 — `media/key-rotation` and `media/key-dropped`**: one live window covered by a single content key (a hint, and only on a playlist with a non-zero media sequence — the first window has nothing to rotate yet), and `METHOD=NONE` after encrypted segments, which leaves the rest of the playlist in the clear. Two behaviours, so two ids: they have different severities and a team pinning one should not lose the other.
+- [x] **HL-6 — `media/iframe-playlist-shape`**: an `EXT-X-I-FRAMES-ONLY` playlist whose segments are whole files instead of `EXT-X-BYTERANGE` ranges, which makes a player download a segment per thumbnail. The other half of the original item — spotting a playlist that *should* declare `EXT-X-I-FRAMES-ONLY` — is not decidable from one file without guessing, so it is deliberately not implemented.
+
 ## Docs and site
 
 ⏳ planned · 0 of 1 · `░░░░░░░░░░`
@@ -70,19 +83,9 @@ The first push turned the CI red on every run and left leftovers on the issue tr
 
 Findings a stream engineer would otherwise catch by reading the manifest twice — all of them still computable from the declarations alone.
 
-⏳ planned · 0 of 6 · `░░░░░░░░░░`
+⏳ planned · 0 of 1 · `░░░░░░░░░░`
 
-### Master playlist
-
-- [ ] **HL-1 — `master/codecs-resolution-mismatch`**: report a `CODECS` profile/level that cannot carry the declared `RESOLUTION` and `FRAME-RATE` (an `avc1.4d401e` Main@3.0 rung claiming 1080p50).
-- [ ] **HL-2 — `master/ladder-spacing`**: report rungs less than ~1.5× apart in bitrate (ABR cannot use a rung it cannot distinguish) and gaps wider than ~2.5× (nothing to fall back to).
-
-### Media playlist
-
-- [ ] **HL-3 — `media/bitrate-vs-declared`**: compare `EXT-X-BITRATE` tags, where a packager emits them, with the variant's `BANDWIDTH`.
-- [ ] **HL-4 — `media/daterange`**: validate `EXT-X-DATERANGE` (SCTE-35 ad breaks): overlapping ranges, `DURATION` disagreeing with `END-DATE`, a `CUE-IN` with no `CUE-OUT`.
-- [ ] **HL-5 — `media/key-rotation`**: report an `EXT-X-KEY` that never rotates across a long live window, and a `METHOD=NONE` after encrypted segments.
-- [ ] **HL-6 — `media/iframe-playlist-shape`**: an I-frame playlist without `EXT-X-I-FRAMES-ONLY`, or with segments that are not byte ranges.
+- [ ] **HL-3 — `media/bitrate-vs-declared`**: compare `EXT-X-BITRATE` tags, where a packager emits them, with the variant's `BANDWIDTH`. Blocked on reading more than one file: the `BANDWIDTH` to compare against lives in the master, which a single-playlist analysis never sees, so this lands with **HL-7**.
 
 ## Editor
 

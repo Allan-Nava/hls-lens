@@ -9,9 +9,63 @@
 // the spec is violated), warning → something a player tolerates but a viewer pays
 // for, hint → advisory, from the Apple HLS authoring specification rather than
 // from RFC 8216.
-import { Playlist, Segment } from './playlist';
+import { Playlist, Segment, Variant, Tag } from './playlist';
 import { attrFloat } from './attrs';
 import { isPlainHttp, looksLikeFmp4Uri } from './uri';
+
+/** Consecutive rungs closer than this are indistinguishable to ABR. */
+const LADDER_MIN_RATIO = 1.5;
+/** Consecutive rungs further apart than this leave nothing to fall back to. */
+const LADDER_MAX_RATIO = 2.5;
+/** A DURATION may disagree with END-DATE minus START-DATE by this much. */
+const DATERANGE_TOLERANCE_S = 1;
+
+/**
+ * H.264 levels: the frame size in macroblocks and the macroblock rate each one
+ * allows (ITU-T H.264 table A-1). The key is level_idc as it appears in the last
+ * two hex digits of an avc1 codec string.
+ */
+const AVC_LEVELS: Record<number, { name: string; maxFrameMbs: number; maxMbsPerSecond: number }> = {
+  10: { name: '1.0', maxFrameMbs: 99, maxMbsPerSecond: 1485 },
+  11: { name: '1.1', maxFrameMbs: 396, maxMbsPerSecond: 3000 },
+  12: { name: '1.2', maxFrameMbs: 396, maxMbsPerSecond: 6000 },
+  13: { name: '1.3', maxFrameMbs: 396, maxMbsPerSecond: 11880 },
+  20: { name: '2.0', maxFrameMbs: 396, maxMbsPerSecond: 11880 },
+  21: { name: '2.1', maxFrameMbs: 792, maxMbsPerSecond: 19800 },
+  22: { name: '2.2', maxFrameMbs: 1620, maxMbsPerSecond: 20250 },
+  30: { name: '3.0', maxFrameMbs: 1620, maxMbsPerSecond: 40500 },
+  31: { name: '3.1', maxFrameMbs: 3600, maxMbsPerSecond: 108000 },
+  32: { name: '3.2', maxFrameMbs: 5120, maxMbsPerSecond: 216000 },
+  40: { name: '4.0', maxFrameMbs: 8192, maxMbsPerSecond: 245760 },
+  41: { name: '4.1', maxFrameMbs: 8192, maxMbsPerSecond: 245760 },
+  42: { name: '4.2', maxFrameMbs: 8704, maxMbsPerSecond: 522240 },
+  50: { name: '5.0', maxFrameMbs: 22080, maxMbsPerSecond: 589824 },
+  51: { name: '5.1', maxFrameMbs: 36864, maxMbsPerSecond: 983040 },
+  52: { name: '5.2', maxFrameMbs: 36864, maxMbsPerSecond: 2073600 },
+  60: { name: '6.0', maxFrameMbs: 139264, maxMbsPerSecond: 4177920 },
+  61: { name: '6.1', maxFrameMbs: 139264, maxMbsPerSecond: 8355840 },
+  62: { name: '6.2', maxFrameMbs: 139264, maxMbsPerSecond: 16711680 },
+};
+
+/**
+ * avcLevelOf decodes the level from an RFC 6381 avc1/avc3 string: `avc1.PPCCLL`,
+ * where LL is level_idc in hex. Level 1b is the exception — level_idc 11 with the
+ * constraint_set3 bit set — and anything that is not this shape returns undefined,
+ * which the caller reads as "no opinion".
+ */
+function avcLevelOf(codecs: string[]): { name: string; maxFrameMbs: number; maxMbsPerSecond: number } | undefined {
+  for (const codec of codecs) {
+    const m = /^avc[13]\.([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(codec.trim());
+    if (!m) continue;
+    const constraints = parseInt(m[2], 16);
+    const levelIdc = parseInt(m[3], 16);
+    if (levelIdc === 11 && (constraints & 0x10) !== 0) {
+      return { name: '1b', maxFrameMbs: 99, maxMbsPerSecond: 1485 };
+    }
+    return AVC_LEVELS[levelIdc];
+  }
+  return undefined;
+}
 
 /** How loudly a finding is reported. */
 export type Severity = 'error' | 'warning' | 'hint';
@@ -185,6 +239,22 @@ export const RULES: RuleDoc[] = [
       'Some players start on the first variant listed. An unordered ladder makes the initial pick arbitrary, which shows up as a stream that sometimes starts at the top rung on a slow connection.',
   },
   {
+    id: 'master/codecs-resolution-mismatch',
+    severity: 'warning',
+    scope: 'master',
+    title: 'The CODECS level can carry the declared RESOLUTION and FRAME-RATE',
+    rationale:
+      'An H.264 level caps the frame size and the macroblock rate. A rung that advertises avc1.4d401e (Main@3.0, 1620 macroblocks) and RESOLUTION=1920x1080 is telling players it cannot decode what it is offering: strict devices — TVs and set-top boxes, rarely the browser you tested in — refuse the rung and fall back, or fail.',
+  },
+  {
+    id: 'master/ladder-spacing',
+    severity: 'hint',
+    scope: 'master',
+    title: 'Consecutive rungs are far enough apart, and not too far',
+    rationale:
+      'Rungs less than about 1.5x apart in bitrate are indistinguishable to ABR: it pays for a second encode and a second cache entry that no switching decision can use. A gap wider than about 2.5x is the opposite problem — when the connection cannot hold the upper rung there is nothing to fall back to except a much worse picture.',
+  },
+  {
     id: 'media/missing-target-duration',
     severity: 'error',
     scope: 'media',
@@ -311,6 +381,38 @@ export const RULES: RuleDoc[] = [
     title: 'Segments are addressed over HTTPS',
     rationale:
       'An http:// segment URI in an https:// playlist is blocked as mixed content in browsers, and readable in transit everywhere else.',
+  },
+  {
+    id: 'media/daterange',
+    severity: 'warning',
+    scope: 'media',
+    title: 'EXT-X-DATERANGE ranges are well formed and do not overlap',
+    rationale:
+      'Ad breaks are described by these ranges, and a player acts on them: a DURATION that disagrees with END-DATE, two ranges of the same CLASS covering the same seconds, or a CUE-IN with nothing to close all end the same way — an ad that does not start, does not end, or is billed and never shown.',
+  },
+  {
+    id: 'media/key-rotation',
+    severity: 'hint',
+    scope: 'media',
+    title: 'A long-running live stream rotates its content key',
+    rationale:
+      'One key for the whole window means one key for the whole event: a key extracted from a browser once decrypts everything that follows, indefinitely. Rotation puts a bound on what a leak is worth.',
+  },
+  {
+    id: 'media/key-dropped',
+    severity: 'warning',
+    scope: 'media',
+    title: 'Encryption is not switched off part-way through',
+    rationale:
+      'An EXT-X-KEY:METHOD=NONE after encrypted segments leaves the rest of the playlist in the clear. It is almost always a packager restarting without its key configuration rather than a deliberate decision, and nothing else in the stream complains.',
+  },
+  {
+    id: 'media/iframe-playlist-shape',
+    severity: 'warning',
+    scope: 'media',
+    title: 'An I-frames-only playlist addresses byte ranges',
+    rationale:
+      'EXT-X-I-FRAMES-ONLY exists so a player can fetch single frames while scrubbing. Segments without EXT-X-BYTERANGE make it download a whole segment per thumbnail, which is the cost trick play was meant to avoid.',
   },
 ];
 
@@ -488,6 +590,69 @@ function checkMaster(pl: Playlist, add: Add): void {
       break;
     }
   }
+
+  checkCodecsAgainstPicture(playable, add);
+  checkLadderSpacing(withBandwidth, add);
+}
+
+/**
+ * checkCodecsAgainstPicture compares the declared H.264 level with the picture the
+ * variant claims to deliver. Only avc1/avc3 are decoded: for anything else — HEVC,
+ * AV1, a codec string that does not parse — the rule has no opinion rather than a
+ * guess, because a wrong warning about a working rung costs more than a missing one.
+ */
+function checkCodecsAgainstPicture(playable: Variant[], add: Add): void {
+  for (const v of playable) {
+    if (!v.resolution) continue;
+    const level = avcLevelOf(v.codecs);
+    if (!level) continue;
+
+    const frameMbs = Math.ceil(v.resolution.width / 16) * Math.ceil(v.resolution.height / 16);
+    const label = v.uri || `line ${v.line + 1}`;
+    if (frameMbs > level.maxFrameMbs) {
+      add(
+        'master/codecs-resolution-mismatch',
+        v.line,
+        `the variant "${label}" declares RESOLUTION=${v.resolution.width}x${v.resolution.height} (${frameMbs} macroblocks) but its CODECS says H.264 level ${level.name}, which tops out at ${level.maxFrameMbs}`,
+        `raise the level in the CODECS string to what the encoder actually produced, or encode the rung smaller`,
+      );
+      continue; // the size is already wrong; the rate would only repeat it
+    }
+    if (v.frameRate !== null && frameMbs * v.frameRate > level.maxMbsPerSecond) {
+      add(
+        'master/codecs-resolution-mismatch',
+        v.line,
+        `the variant "${label}" declares ${v.resolution.width}x${v.resolution.height} at ${v.frameRate}fps (${Math.round(frameMbs * v.frameRate)} macroblocks/s) but H.264 level ${level.name} allows ${level.maxMbsPerSecond}`,
+        'raise the level in the CODECS string, or lower the frame rate of the rung',
+      );
+    }
+  }
+}
+
+/** checkLadderSpacing reports rungs ABR cannot distinguish, and gaps it cannot bridge. */
+function checkLadderSpacing(withBandwidth: Variant[], add: Add): void {
+  const rungs = [...withBandwidth].sort((a, b) => a.bandwidth! - b.bandwidth!);
+  for (let i = 1; i < rungs.length; i++) {
+    const lower = rungs[i - 1].bandwidth!;
+    const upper = rungs[i].bandwidth!;
+    if (lower <= 0) continue;
+    const ratio = upper / lower;
+    if (ratio < LADDER_MIN_RATIO) {
+      add(
+        'master/ladder-spacing',
+        rungs[i].line,
+        `this rung is only ${ratio.toFixed(2)}x the bitrate of the one below it (${lower} → ${upper}): ABR cannot tell them apart`,
+        `space the rungs at least ${LADDER_MIN_RATIO}x apart, or drop one of them`,
+      );
+    } else if (ratio > LADDER_MAX_RATIO) {
+      add(
+        'master/ladder-spacing',
+        rungs[i].line,
+        `this rung is ${ratio.toFixed(2)}x the bitrate of the one below it (${lower} → ${upper}): there is nothing to fall back to in between`,
+        `add a rung between them, or keep consecutive rungs under ${LADDER_MAX_RATIO}x`,
+      );
+    }
+  }
 }
 
 function checkMedia(pl: Playlist, add: Add, pdtToleranceMs: number, slack: number): void {
@@ -539,6 +704,20 @@ function checkMedia(pl: Playlist, add: Add, pdtToleranceMs: number, slack: numbe
     if (isPlainHttp(s.uri)) {
       add('media/plaintext-segment', s.uriLine, `the segment is addressed over plaintext HTTP (${s.uri})`, 'serve the segments over HTTPS');
       break; // one finding is enough: it is a playlist-wide packaging choice
+    }
+  }
+
+  checkDateRanges(pl, add);
+  checkKeyLifecycle(pl, add, isLive);
+  if (pl.iframesOnly) {
+    const whole = pl.segments.find((s) => s.byterange === null);
+    if (whole) {
+      add(
+        'media/iframe-playlist-shape',
+        whole.uriLine,
+        `this EXT-X-I-FRAMES-ONLY playlist addresses whole segments (${whole.uri}) instead of byte ranges`,
+        'point the segments at byte ranges of the media file with EXT-X-BYTERANGE, so scrubbing fetches frames and not segments',
+      );
     }
   }
 
@@ -650,5 +829,143 @@ function checkProgramDateTime(pl: Playlist, add: Add, toleranceMs: number, isLiv
         'emit PROGRAM-DATE-TIME from the media timeline, not from the packager wall clock',
       );
     }
+  }
+}
+
+/**
+ * checkDateRanges validates the EXT-X-DATERANGE tags that describe ad breaks and
+ * other timed metadata: a range with no START-DATE, a DURATION that disagrees with
+ * END-DATE, two ranges of the same CLASS covering the same seconds, and a CUE-IN
+ * with nothing open to close.
+ */
+function checkDateRanges(pl: Playlist, add: Add): void {
+  const ranges = pl.tags.filter((t) => t.name === 'EXT-X-DATERANGE');
+  if (ranges.length === 0) return;
+
+  interface Range {
+    tag: Tag;
+    id: string;
+    cls: string;
+    start: number;
+    end: number | null;
+  }
+  const parsed: Range[] = [];
+
+  for (const tag of ranges) {
+    const id = tag.attrs.get('ID') ?? '';
+    const startRaw = tag.attrs.get('START-DATE') ?? '';
+    const start = Date.parse(startRaw);
+    if (!startRaw || Number.isNaN(start)) {
+      add(
+        'media/daterange',
+        tag.line,
+        `the range ${id ? `"${id}"` : 'on this line'} has no usable START-DATE${startRaw ? ` ("${startRaw}")` : ''}, which the spec requires`,
+        'add START-DATE as an ISO-8601 timestamp',
+      );
+      continue;
+    }
+
+    const endRaw = tag.attrs.get('END-DATE');
+    const end = endRaw ? Date.parse(endRaw) : NaN;
+    const duration = attrFloat(tag.attrs, 'DURATION');
+    if (endRaw && !Number.isNaN(end) && duration !== null) {
+      const implied = (end - start) / 1000;
+      if (Math.abs(implied - duration) > DATERANGE_TOLERANCE_S) {
+        add(
+          'media/daterange',
+          tag.line,
+          `the range ${id ? `"${id}"` : 'on this line'} declares DURATION=${duration} but END-DATE is ${implied}s after START-DATE`,
+          'make DURATION and END-DATE agree; players trust whichever one they read first',
+        );
+      }
+    }
+
+    const explicitEnd = endRaw && !Number.isNaN(end) ? end : null;
+    parsed.push({
+      tag,
+      id,
+      cls: tag.attrs.get('CLASS') ?? '',
+      start,
+      end: explicitEnd ?? (duration !== null ? start + duration * 1000 : null),
+    });
+  }
+
+  // Overlap is only meaningful inside one CLASS: two different kinds of range are
+  // supposed to coexist, two ad breaks are not.
+  const byClass = new Map<string, Range[]>();
+  for (const r of parsed) {
+    byClass.set(r.cls, [...(byClass.get(r.cls) ?? []), r]);
+  }
+  for (const [, group] of byClass) {
+    const sorted = [...group].sort((a, b) => a.start - b.start || a.tag.line - b.tag.line);
+    for (let i = 1; i < sorted.length; i++) {
+      const previous = sorted[i - 1];
+      const current = sorted[i];
+      if (previous.end !== null && current.start < previous.end) {
+        add(
+          'media/daterange',
+          current.tag.line,
+          `this range ${current.id ? `("${current.id}") ` : ''}starts before the previous one ${previous.id ? `("${previous.id}") ` : ''}ends: the two overlap`,
+          'a player in the overlap has to choose one; make the ranges consecutive',
+        );
+      }
+    }
+  }
+
+  // SCTE-35 in/out pairing, in the order the tags appear.
+  let open = 0;
+  for (const tag of ranges) {
+    const cue = (tag.attrs.get('CUE') ?? '').toUpperCase();
+    if (tag.attrs.has('SCTE35-OUT') || cue.includes('OUT')) open++;
+    if (tag.attrs.has('SCTE35-IN') || cue.includes('IN')) {
+      if (open === 0) {
+        add(
+          'media/daterange',
+          tag.line,
+          `this range closes an ad break (SCTE35-IN) that nothing in the playlist opened`,
+          'either the matching SCTE35-OUT range slid out of the window, or the packager emitted the pair out of order',
+        );
+      } else {
+        open--;
+      }
+    }
+  }
+}
+
+/**
+ * checkKeyLifecycle looks at the EXT-X-KEY tags as a sequence rather than one at a
+ * time: a live window covered by a single key, and encryption switched off part-way
+ * through.
+ */
+function checkKeyLifecycle(pl: Playlist, add: Add, isLive: boolean): void {
+  const encrypting = pl.keys.filter((k) => (k.attrs.get('METHOD') ?? 'NONE').toUpperCase() !== 'NONE');
+  if (encrypting.length === 0) return;
+
+  // METHOD=NONE after encrypted content: everything from that line on is in the clear.
+  const firstEncrypted = encrypting[0];
+  for (const key of pl.keys) {
+    if (key.line <= firstEncrypted.line) continue;
+    if ((key.attrs.get('METHOD') ?? '').toUpperCase() !== 'NONE') continue;
+    const encryptedSegments = pl.segments.some((s) => s.uriLine > firstEncrypted.line && s.uriLine < key.line);
+    if (!encryptedSegments) continue;
+    add(
+      'media/key-dropped',
+      key.line,
+      'EXT-X-KEY:METHOD=NONE switches encryption off part-way through: every segment below this line is in the clear',
+      'if this is not deliberate, the packager lost its key configuration mid-stream',
+    );
+    break; // one report: the rest of the playlist is the same finding
+  }
+
+  // A live window one key covers. Only for a playlist that has been running (a
+  // non-zero media sequence): the first window of a stream has nothing to rotate yet.
+  const distinctKeys = new Set(encrypting.map((k) => `${k.attrs.get('METHOD')}|${k.attrs.get('URI') ?? ''}|${k.attrs.get('IV') ?? ''}`));
+  if (isLive && distinctKeys.size === 1 && (pl.mediaSequence ?? 0) > 0 && pl.segments.length >= 5) {
+    add(
+      'media/key-rotation',
+      firstEncrypted.line,
+      `the whole live window is encrypted with one key (${pl.segments.length} segments, media sequence ${pl.mediaSequence}) and no rotation appears in it`,
+      'rotate the content key periodically: a key pulled out of a player once decrypts everything that follows it',
+    );
   }
 }

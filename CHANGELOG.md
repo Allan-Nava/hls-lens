@@ -3,6 +3,28 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.4.0] - 2026-08-17
+
+Sei regole nuove (33 → 39), tutte calcolabili dalle sole dichiarazioni del manifest. Scritte in TDD col RED verificato.
+
+### Aggiunto
+
+- **`master/codecs-resolution-mismatch`** (HL-1, warning): decodifica il livello H.264 dalla stringa `avc1`/`avc3` (`avc1.PPCCLL`, con il caso speciale del livello 1b) e lo confronta con `RESOLUTION` e `FRAME-RATE` usando i limiti di macroblocchi della tabella A-1 di ITU-T H.264. Un gradino che promette 1080p50 dichiarando Main@3.0 sta dicendo ai player che non sa decodificare quello che offre: i device severi — TV e set-top box, raramente il browser su cui si prova — lo rifiutano. Solo avc1/avc3: su HEVC, AV1 o una stringa che non si parsa la regola **non ha opinione**, perché un warning sbagliato su un gradino che funziona costa più di uno mancante. **Ha trovato due difetti veri nella fixture "clean" di questo repo** (720p50 su Main@3.1 e 1080p50 su High@4.0), corretti nello stesso commit.
+- **`master/ladder-spacing`** (HL-2, hint): gradini a meno di 1.5× di distanza (ABR non li distingue: si paga due volte un encode e una entry di cache che nessuna decisione di switching può usare) e salti oltre 2.5× (quando la banda non regge il gradino sopra non c'è niente in mezzo su cui ripiegare).
+- **`media/daterange`** (HL-4, warning): `EXT-X-DATERANGE` senza `START-DATE` utilizzabile, `DURATION` in disaccordo con `END-DATE`, due range della stessa `CLASS` che coprono gli stessi secondi, e un `SCTE35-IN`/`CUE-IN` che non chiude niente. Sono gli ad break: finiscono in una pubblicità che non parte, non finisce, o viene fatturata e mai mostrata.
+- **`media/key-rotation`** (HL-5, hint) e **`media/key-dropped`** (HL-5, warning): una finestra live coperta da una sola chiave (solo con media sequence diversa da zero — la prima finestra non ha ancora niente da ruotare), e `METHOD=NONE` dopo segmenti cifrati, che lascia in chiaro tutto il resto della playlist. Due comportamenti, due id: hanno severità diverse e chi ne pinna uno non deve perdere l'altro.
+- **`media/iframe-playlist-shape`** (HL-6, warning): una playlist `EXT-X-I-FRAMES-ONLY` i cui segmenti sono file interi invece di `EXT-X-BYTERANGE` — che fa scaricare un segmento per miniatura, cioè esattamente il costo che il trick play doveva evitare.
+
+### Modificato
+
+- **Fixture `master-clean.m3u8`**: i livelli `CODECS` dei gradini 720p50 e 1080p50 passano a `avc1.4d4028` (Main@4.0) e `avc1.64002a` (High@4.2), che è quello che un encoder produce davvero per quelle risoluzioni a 50fps. La fixture "pulita" non lo era.
+- README, `docs/index.md` e `CLAUDE.md` aggiornati sul conteggio (5 structure, 14 master, 20 media).
+
+### Non fatto, di proposito
+
+- **HL-3 (`media/bitrate-vs-declared`)** resta aperta: il `BANDWIDTH` con cui confrontare gli `EXT-X-BITRATE` sta nel master, che un'analisi su singola playlist non vede mai. Esce con HL-7 (regole cross-playlist).
+- La metà di HL-6 che voleva riconoscere una playlist che *dovrebbe* dichiarare `EXT-X-I-FRAMES-ONLY` non è decidibile da un file solo senza tirare a indovinare, e non è stata implementata.
+
 ## [0.3.3] - 2026-08-17
 
 Il generatore dell'icona era l'ultimo pezzo di logica senza test: verificato a mano su quattro casi, che passano una volta sola e non lasciano niente dietro.
@@ -83,6 +105,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.4.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.4.0
 [0.3.3]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.3.3
 [0.3.2]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.3.2
 [0.3.1]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.3.1
