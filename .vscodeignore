@@ -1,0 +1,21 @@
+# Everything the extension does not need at runtime. dist/extension.js is the
+# bundle; the sources, the tests and the generators stay out of the .vsix.
+.vscode/**
+.github/**
+src/**
+test/**
+scripts/**
+docs/**
+node_modules/**
+.test/**
+.build/**
+out/**
+esbuild.mjs
+tsconfig.json
+.gitignore
+.vscodeignore
+CLAUDE.md
+BACKLOG.md
+**/*.map
+**/*.ts
+!dist/extension.js

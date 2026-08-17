@@ -1,0 +1,254 @@
+{
+  "name": "hls-lens",
+  "displayName": "HLS Lens",
+  "description": "Read HLS manifests in VS Code: inline diagnostics on m3u8 playlists, the bitrate ladder as a tree, and a deep segment check with segcheck.",
+  "version": "0.1.0",
+  "publisher": "allannava95",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Allan-Nava/hls-lens"
+  },
+  "homepage": "https://github.com/Allan-Nava/hls-lens#readme",
+  "bugs": {
+    "url": "https://github.com/Allan-Nava/hls-lens/issues"
+  },
+  "galleryBanner": {
+    "color": "#0B1220",
+    "theme": "dark"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Linters",
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "hls",
+    "m3u8",
+    "streaming",
+    "video",
+    "abr"
+  ],
+  "//activationEvents": "onLanguage:m3u8 is generated from the languages contribution below; workspaceContains covers a workspace whose manifests are not open yet.",
+  "activationEvents": [
+    "workspaceContains:**/*.m3u8"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "m3u8",
+        "aliases": [
+          "HLS Playlist",
+          "m3u8"
+        ],
+        "extensions": [
+          ".m3u8",
+          ".m3u"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "m3u8",
+        "scopeName": "source.m3u8",
+        "path": "./syntaxes/m3u8.tmLanguage.json"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "hlsLens",
+          "title": "HLS",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "hlsLens": [
+        {
+          "id": "hlsLens.explorer",
+          "name": "Manifest"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "hlsLens.explorer",
+        "contents": "No HLS manifest open.\nOpen an .m3u8 file, or fetch one from a URL.\n\n[Open manifest URL…](command:hlsLens.openUrl)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "hlsLens.openUrl",
+        "title": "HLS Lens: Open Manifest URL…",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "hlsLens.refresh",
+        "title": "HLS Lens: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "hlsLens.openChild",
+        "title": "HLS Lens: Open Playlist"
+      },
+      {
+        "command": "hlsLens.copyUri",
+        "title": "HLS Lens: Copy Resolved URI",
+        "icon": "$(clippy)"
+      },
+      {
+        "command": "hlsLens.revealLine",
+        "title": "HLS Lens: Reveal in Manifest"
+      },
+      {
+        "command": "hlsLens.deepCheck",
+        "title": "HLS Lens: Deep Check Segments (segcheck)",
+        "icon": "$(beaker)"
+      },
+      {
+        "command": "hlsLens.showRules",
+        "title": "HLS Lens: Show Rule Reference"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "hlsLens.openUrl",
+          "when": "view == hlsLens.explorer",
+          "group": "navigation@1"
+        },
+        {
+          "command": "hlsLens.deepCheck",
+          "when": "view == hlsLens.explorer",
+          "group": "navigation@2"
+        },
+        {
+          "command": "hlsLens.refresh",
+          "when": "view == hlsLens.explorer",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "hlsLens.openChild",
+          "when": "view == hlsLens.explorer && viewItem =~ /playlist/",
+          "group": "inline@1"
+        },
+        {
+          "command": "hlsLens.copyUri",
+          "when": "view == hlsLens.explorer && viewItem =~ /playlist/",
+          "group": "inline@2"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "hlsLens.deepCheck",
+          "when": "resourceLangId == m3u8",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "HLS Lens",
+      "properties": {
+        "hlsLens.diagnostics.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Report manifest problems as diagnostics while you edit."
+        },
+        "hlsLens.diagnostics.minSeverity": {
+          "type": "string",
+          "enum": [
+            "hint",
+            "warning",
+            "error"
+          ],
+          "default": "hint",
+          "description": "Lowest severity to report. 'warning' hides the advisory hints."
+        },
+        "hlsLens.diagnostics.skip": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Rule ids or categories to skip (e.g. master/missing-codecs, syntax)."
+        },
+        "hlsLens.pdtDriftToleranceMs": {
+          "type": "number",
+          "default": 500,
+          "description": "Allowed drift between EXT-X-PROGRAM-DATE-TIME steps and the EXTINF durations between them."
+        },
+        "hlsLens.targetDurationSlack": {
+          "type": "number",
+          "default": 1.5,
+          "description": "Report EXT-X-TARGETDURATION as overstated when it exceeds the longest segment by more than this factor."
+        },
+        "hlsLens.request.headers": {
+          "type": "object",
+          "default": {},
+          "description": "Extra HTTP headers sent when fetching a manifest URL (e.g. a token or a Host override)."
+        },
+        "hlsLens.request.timeoutMs": {
+          "type": "number",
+          "default": 15000,
+          "description": "Timeout for fetching a manifest URL."
+        },
+        "hlsLens.segcheck.path": {
+          "type": "string",
+          "default": "segcheck",
+          "description": "Path to the segcheck binary used by the deep check."
+        },
+        "hlsLens.segcheck.segments": {
+          "type": "number",
+          "default": 6,
+          "description": "Segments to sample per rendition in the deep check."
+        },
+        "hlsLens.segcheck.renditions": {
+          "type": "number",
+          "default": 0,
+          "description": "Video renditions to inspect in the deep check (0 = all)."
+        },
+        "hlsLens.segcheck.from": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "edge",
+            "start"
+          ],
+          "default": "auto",
+          "description": "Where the deep check samples segments: auto (edge for live, start for VOD), edge, or start."
+        },
+        "hlsLens.segcheck.insecure": {
+          "type": "boolean",
+          "default": false,
+          "description": "Skip TLS verification in the deep check. For lab servers with a self-signed chain only."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test": "node esbuild.mjs --test && node .test/run.mjs",
+    "docs": "node esbuild.mjs --docs && node .build/gen-docs.mjs",
+    "icon": "node scripts/make-icon.mjs",
+    "package": "vsce package --no-dependencies",
+    "vscode:prepublish": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.5.0"
+  }
+}

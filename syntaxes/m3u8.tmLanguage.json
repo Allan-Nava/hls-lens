@@ -1,0 +1,46 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "HLS Playlist",
+  "scopeName": "source.m3u8",
+  "patterns": [
+    { "include": "#tag" },
+    { "include": "#comment" },
+    { "include": "#uri" }
+  ],
+  "repository": {
+    "comment": {
+      "comment": "A '#' line that is not a tag is a comment; players ignore it.",
+      "match": "^#(?!EXT).*$",
+      "name": "comment.line.number-sign.m3u8"
+    },
+    "tag": {
+      "begin": "^(#)(EXT[A-Z0-9-]*)(:?)",
+      "beginCaptures": {
+        "1": { "name": "punctuation.definition.tag.m3u8" },
+        "2": { "name": "keyword.control.tag.m3u8" },
+        "3": { "name": "punctuation.separator.m3u8" }
+      },
+      "end": "$",
+      "patterns": [
+        {
+          "comment": "ATTRIBUTE=value, the shape most tags carry.",
+          "match": "([A-Z0-9-]+)(=)",
+          "captures": {
+            "1": { "name": "variable.other.attribute-name.m3u8" },
+            "2": { "name": "punctuation.separator.key-value.m3u8" }
+          }
+        },
+        { "match": "\"[^\"]*\"", "name": "string.quoted.double.m3u8" },
+        { "match": "\\b0[xX][0-9a-fA-F]+\\b", "name": "constant.numeric.hex.m3u8" },
+        { "match": "\\b\\d+(\\.\\d+)?\\b", "name": "constant.numeric.m3u8" },
+        { "match": "\\b(YES|NO|VOD|EVENT|AUDIO|VIDEO|SUBTITLES|CLOSED-CAPTIONS|NONE)\\b", "name": "constant.language.m3u8" },
+        { "match": "\\b\\d+x\\d+\\b", "name": "constant.numeric.resolution.m3u8" }
+      ]
+    },
+    "uri": {
+      "comment": "Anything that is not a tag or a comment is a URI line.",
+      "match": "^[^#\\s].*$",
+      "name": "markup.underline.link.m3u8"
+    }
+  }
+}

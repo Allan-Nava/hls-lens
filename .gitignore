@@ -1,0 +1,13 @@
+node_modules/
+dist/
+out/
+.test/
+.build/
+*.vsix
+.DS_Store
+
+# Per-developer Claude Code permissions — machine-local, never shared.
+.claude/settings.local.json
+
+# graphify knowledge graph: derived from the sources.
+graphify-out/

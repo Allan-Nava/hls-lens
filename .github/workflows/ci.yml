@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "master"]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      # Anti-divergence gate: docs/RULES.md is a projection of the rule catalogue
+      # compiled into the extension, so regenerating it must be a no-op. Without
+      # this, a rule can land while the reference still describes the old set.
+      - name: Rule reference is up to date
+        run: |
+          npm run docs
+          if ! git diff --quiet -- docs/RULES.md; then
+            echo "::error::docs/RULES.md is stale — run 'npm run docs' and commit the result"
+            git diff -- docs/RULES.md
+            exit 1
+          fi
+      # The icon is generated too: a hand-edited PNG would silently diverge from
+      # the script that is supposed to produce it.
+      - name: Icon is up to date
+        run: |
+          npm run icon
+          if ! git diff --quiet -- media/icon.png; then
+            echo "::error::media/icon.png is stale — run 'npm run icon' and commit the result"
+            exit 1
+          fi
+      - name: Package the extension
+        run: npx @vscode/vsce package --no-dependencies --out hls-lens.vsix
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: hls-lens.vsix
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - name: Package with the tag version
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          manifest="$(node -p "require('./package.json').version")"
+          if [ "$version" != "$manifest" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $manifest"
+            exit 1
+          fi
+          npx @vscode/vsce package --no-dependencies --out "hls-lens-${version}.vsix"
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: hls-lens-*.vsix
+          body: |
+            See [CHANGELOG.md](https://github.com/Allan-Nava/hls-lens/blob/main/CHANGELOG.md) for what changed.
+
+            Install the attached `.vsix` with:
+
+            ```bash
+            code --install-extension hls-lens-<version>.vsix
+            ```
+          generate_release_notes: true
