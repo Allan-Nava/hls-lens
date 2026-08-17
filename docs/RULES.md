@@ -2,7 +2,8 @@
 
 # Rules
 
-HLS Lens ships 39 rules. Each one reads the manifest only — the claims — and points at the line you have to fix.
+HLS Lens ships 47 rules. Most read one manifest — the claims it makes — and point at the line you have to fix;
+the `cross/*` rules read the master and its renditions together and report on the variant line of the master.
 For the defects that need the segment bytes (a gap that no `EXT-X-DISCONTINUITY` declares, a 1080p rung that codes 720p),
 run the deep check, which brings [segcheck](https://github.com/Allan-Nava/segcheck) findings into the same Problems panel.
 
@@ -52,6 +53,14 @@ Ids are stable: they are what `hlsLens.diagnostics.skip` pins.
 | [`media/key-rotation`](#mediakey-rotation) | hint | A long-running live stream rotates its content key |
 | [`media/key-dropped`](#mediakey-dropped) | warning | Encryption is not switched off part-way through |
 | [`media/iframe-playlist-shape`](#mediaiframe-playlist-shape) | warning | An I-frames-only playlist addresses byte ranges |
+| [`cross/version-mismatch`](#crossversion-mismatch) | warning | Every rendition declares the same EXT-X-VERSION |
+| [`cross/target-duration-mismatch`](#crosstarget-duration-mismatch) | warning | Every rendition declares the same EXT-X-TARGETDURATION |
+| [`cross/playlist-type-mismatch`](#crossplaylist-type-mismatch) | error | The renditions are all live, or all finished |
+| [`cross/media-sequence-mismatch`](#crossmedia-sequence-mismatch) | warning | The live windows start at the same media sequence |
+| [`cross/segment-count-mismatch`](#crosssegment-count-mismatch) | error | The renditions hold the same number of segments |
+| [`cross/timeline-drift`](#crosstimeline-drift) | error | Segment boundaries land at the same time in every rendition |
+| [`cross/discontinuity-mismatch`](#crossdiscontinuity-mismatch) | error | Discontinuities land on the same segment in every rendition |
+| [`cross/bitrate-vs-declared`](#crossbitrate-vs-declared) | warning | BANDWIDTH covers the bitrate the rendition declares |
 
 ## Structure
 
@@ -298,3 +307,55 @@ An EXT-X-KEY:METHOD=NONE after encrypted segments leaves the rest of the playlis
 **An I-frames-only playlist addresses byte ranges** · warning
 
 EXT-X-I-FRAMES-ONLY exists so a player can fetch single frames while scrubbing. Segments without EXT-X-BYTERANGE make it download a whole segment per thumbnail, which is the cost trick play was meant to avoid.
+
+## Across playlists
+
+Rules that need the master and its renditions at once, from `HLS Lens: Check Renditions Together`. Every rendition is a valid playlist on its own; these are the ways they can disagree with each other.
+
+### `cross/version-mismatch`
+
+**Every rendition declares the same EXT-X-VERSION** · warning
+
+A player honours the version of the playlist it is reading. One rendition declaring less than the others means the tags the rest of the stream relies on may be ignored on exactly the rung a device happened to pick.
+
+### `cross/target-duration-mismatch`
+
+**Every rendition declares the same EXT-X-TARGETDURATION** · warning
+
+Target duration drives buffering and the reload interval. Renditions that disagree about it are segmented differently, which is the first symptom of two encoders that were not configured from the same source.
+
+### `cross/playlist-type-mismatch`
+
+**The renditions are all live, or all finished** · error
+
+One rendition carrying EXT-X-ENDLIST while the others are still live strands every player that switches to it: it believes the stream ended and stops. It is what a packager leaves behind when one encoder finishes early.
+
+### `cross/media-sequence-mismatch`
+
+**The live windows start at the same media sequence** · warning
+
+Windows that are offset mean a player switching rungs jumps forwards or backwards in time by the difference — visible as a skip or a repeat exactly when the connection got worse.
+
+### `cross/segment-count-mismatch`
+
+**The renditions hold the same number of segments** · error
+
+Renditions of one stream are segmented identically so a player can switch at any boundary. A different count is a different timeline, and switching lands somewhere the player did not intend.
+
+### `cross/timeline-drift`
+
+**Segment boundaries land at the same time in every rendition** · error
+
+Equal segment counts can still hide different boundaries. A player that switches rungs continues at the boundary it knows, so drift shows up as a picture that starts mid-segment or a fraction of a second repeated.
+
+### `cross/discontinuity-mismatch`
+
+**Discontinuities land on the same segment in every rendition** · error
+
+An ad break or an encoder restart that is one segment out on one rung breaks the switch precisely where the stream is already changing — the hardest place to diagnose from a single file.
+
+### `cross/bitrate-vs-declared`
+
+**BANDWIDTH covers the bitrate the rendition declares** · warning
+
+BANDWIDTH is the peak a rendition can reach, and ABR provisions against it. A playlist whose own EXT-X-BITRATE is higher than the master promises makes the player pick a rung the connection cannot carry, and rebuffer.

@@ -96,7 +96,7 @@ export interface AnalyzeOptions {
 export interface RuleDoc {
   id: string;
   severity: Severity;
-  scope: 'syntax' | 'master' | 'media';
+  scope: 'syntax' | 'master' | 'media' | 'cross';
   title: string;
   rationale: string;
 }
@@ -413,6 +413,70 @@ export const RULES: RuleDoc[] = [
     title: 'An I-frames-only playlist addresses byte ranges',
     rationale:
       'EXT-X-I-FRAMES-ONLY exists so a player can fetch single frames while scrubbing. Segments without EXT-X-BYTERANGE make it download a whole segment per thumbnail, which is the cost trick play was meant to avoid.',
+  },
+  {
+    id: 'cross/version-mismatch',
+    severity: 'warning',
+    scope: 'cross',
+    title: 'Every rendition declares the same EXT-X-VERSION',
+    rationale:
+      'A player honours the version of the playlist it is reading. One rendition declaring less than the others means the tags the rest of the stream relies on may be ignored on exactly the rung a device happened to pick.',
+  },
+  {
+    id: 'cross/target-duration-mismatch',
+    severity: 'warning',
+    scope: 'cross',
+    title: 'Every rendition declares the same EXT-X-TARGETDURATION',
+    rationale:
+      'Target duration drives buffering and the reload interval. Renditions that disagree about it are segmented differently, which is the first symptom of two encoders that were not configured from the same source.',
+  },
+  {
+    id: 'cross/playlist-type-mismatch',
+    severity: 'error',
+    scope: 'cross',
+    title: 'The renditions are all live, or all finished',
+    rationale:
+      'One rendition carrying EXT-X-ENDLIST while the others are still live strands every player that switches to it: it believes the stream ended and stops. It is what a packager leaves behind when one encoder finishes early.',
+  },
+  {
+    id: 'cross/media-sequence-mismatch',
+    severity: 'warning',
+    scope: 'cross',
+    title: 'The live windows start at the same media sequence',
+    rationale:
+      'Windows that are offset mean a player switching rungs jumps forwards or backwards in time by the difference — visible as a skip or a repeat exactly when the connection got worse.',
+  },
+  {
+    id: 'cross/segment-count-mismatch',
+    severity: 'error',
+    scope: 'cross',
+    title: 'The renditions hold the same number of segments',
+    rationale:
+      'Renditions of one stream are segmented identically so a player can switch at any boundary. A different count is a different timeline, and switching lands somewhere the player did not intend.',
+  },
+  {
+    id: 'cross/timeline-drift',
+    severity: 'error',
+    scope: 'cross',
+    title: 'Segment boundaries land at the same time in every rendition',
+    rationale:
+      'Equal segment counts can still hide different boundaries. A player that switches rungs continues at the boundary it knows, so drift shows up as a picture that starts mid-segment or a fraction of a second repeated.',
+  },
+  {
+    id: 'cross/discontinuity-mismatch',
+    severity: 'error',
+    scope: 'cross',
+    title: 'Discontinuities land on the same segment in every rendition',
+    rationale:
+      'An ad break or an encoder restart that is one segment out on one rung breaks the switch precisely where the stream is already changing — the hardest place to diagnose from a single file.',
+  },
+  {
+    id: 'cross/bitrate-vs-declared',
+    severity: 'warning',
+    scope: 'cross',
+    title: 'BANDWIDTH covers the bitrate the rendition declares',
+    rationale:
+      'BANDWIDTH is the peak a rendition can reach, and ABR provisions against it. A playlist whose own EXT-X-BITRATE is higher than the master promises makes the player pick a rung the connection cannot carry, and rebuffer.',
   },
 ];
 

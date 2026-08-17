@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**14 of 21 items done** · `██████░░░░` 67%
+**16 of 21 items done** · `███████░░░` 76%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -17,9 +17,9 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [v0.3.3 — Icon generator under test](#v033--icon-generator-under-test) | ✅ shipped | 1/1 |
 | [v0.4.0 — Rules that pay for themselves](#v040--rules-that-pay-for-themselves) | ✅ shipped | 5/5 |
 | [v0.5.0 — Editor](#v050--editor) | ✅ shipped | 3/3 |
+| [v0.6.0 — More than one file at a time](#v060--more-than-one-file-at-a-time) | ✅ shipped | 2/2 |
 | [Docs and site](#docs-and-site) | ⏳ planned | 0/1 |
-| [Rules that pay for themselves](#rules-that-pay-for-themselves) | ⏳ planned | 0/1 |
-| [More than one file at a time](#more-than-one-file-at-a-time) | ⏳ planned | 0/4 |
+| [More than one file at a time](#more-than-one-file-at-a-time) | ⏳ planned | 0/3 |
 | [Later — DASH](#later--dash) | ⏳ planned | 0/1 |
 
 ## v0.1.0 — Reading manifests
@@ -83,27 +83,27 @@ The spec where the manifest is, instead of in a browser tab.
 - [x] **HL-10 — Completion provider**: `completeAt` reads the line up to the cursor and decides whether a tag name, an attribute name or an enumerated value belongs there. It filters tags by the kind of playlist (a media playlist is never offered `EXT-X-STREAM-INF`) and never offers an attribute already on the line.
 - [x] **HL-11 — Quick fixes**: `quickFixesFor` covers `syntax/version-too-low`, `media/missing-endlist` and the two target-duration findings, as line edits the glue turns into a `WorkspaceEdit`. Only the mechanical ones: a fix that needs a judgement call is not offered.
 
+## v0.6.0 — More than one file at a time
+
+The first rules that need the master and its renditions at once.
+
+✅ shipped · 2 of 2 · `██████████`
+
+- [x] **HL-7 — Cross-playlist rules**: `src/core/crosscheck.ts` with eight `cross/*` rules — same `EXT-X-VERSION`, same `EXT-X-TARGETDURATION`, same segment count, boundaries that land at the same time, discontinuities on the same segment, live windows that start together, and one rung that ended while the others are live. Findings anchor to the `EXT-X-STREAM-INF` line of the master, which is the file the operator has open. The command `HLS Lens: Check Renditions Together` loads the rungs from disk or from the CDN into their own diagnostic collection.
+- [x] **HL-3 — `cross/bitrate-vs-declared`**: shipped with HL-7, as the id says — the comparison needs the master's `BANDWIDTH` and the rendition's own `EXT-X-BITRATE` in the same place, so it belongs in the cross category rather than in `media/*` as the original item guessed.
+
 ## Docs and site
 
 ⏳ planned · 0 of 1 · `░░░░░░░░░░`
 
 - [ ] **HL-16 — Documentation site**: GitHub Pages from `docs/`, with the generated rule reference as its reference section and the roadmap as its plan (the sibling lenses already do this).
 
-## Rules that pay for themselves
-
-Findings a stream engineer would otherwise catch by reading the manifest twice — all of them still computable from the declarations alone.
-
-⏳ planned · 0 of 1 · `░░░░░░░░░░`
-
-- [ ] **HL-3 — `media/bitrate-vs-declared`**: compare `EXT-X-BITRATE` tags, where a packager emits them, with the variant's `BANDWIDTH`. Blocked on reading more than one file: the `BANDWIDTH` to compare against lives in the master, which a single-playlist analysis never sees, so this lands with **HL-7**.
-
 ## More than one file at a time
 
 Everything that needs the master and its variants together, or the same playlist over time.
 
-⏳ planned · 0 of 4 · `░░░░░░░░░░`
+⏳ planned · 0 of 3 · `░░░░░░░░░░`
 
-- [ ] **HL-7 — Cross-playlist rules**: with the master and its variants loaded, check that renditions share a timeline (same segment count and boundaries), that every variant declares the same `EXT-X-VERSION`, and that discontinuities line up. The first rule set that needs more than one file open.
 - [ ] **HL-12 — Timeline webview**: segments as a strip with discontinuities, gaps and ad breaks marked, and the renditions stacked to show whether they are aligned.
 - [ ] **HL-13 — Live watch**: reload a live playlist on its target duration and report what changed (new segments, a window that stopped sliding, a discontinuity that appeared).
 - [ ] **HL-14 — Deep check on a selection**: run segcheck against a single variant picked in the tree rather than the whole master.

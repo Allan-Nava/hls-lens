@@ -14,6 +14,7 @@ import { parseAttributeList, attrInt, attrFloat, attrResolution, attrList, attrB
 import { parsePlaylist, looksLikePlaylist, KNOWN_TAG_NAMES } from '../src/core/playlist';
 import { tagSpec, renderTagHover, SPEC_TAGS, completeAt } from '../src/core/spec';
 import { quickFixesFor } from '../src/core/fixes';
+import { analyzeAcross, LoadedRendition } from '../src/core/crosscheck';
 import { analyze, RULES, Finding, Severity } from '../src/core/analyze';
 import { buildLadder, renditionRows, ladderSummary, formatBandwidth, formatResolution } from '../src/core/ladder';
 import { resolveUri, baseOf, isRemote, isPlainHttp, looksLikePlaylistUri } from '../src/core/uri';
@@ -383,7 +384,7 @@ async function main(): Promise<void> {
     for (const r of RULES) {
       assert.ok(!ids.has(r.id), `duplicate rule id ${r.id}`);
       ids.add(r.id);
-      assert.match(r.id, /^(syntax|master|media)\/[a-z0-9-]+$/, `${r.id} is not a namespaced kebab-case id`);
+      assert.match(r.id, /^(syntax|master|media|cross)\/[a-z0-9-]+$/, `${r.id} is not a namespaced kebab-case id`);
       assert.ok(r.title.trim().length > 0, `${r.id} has no title`);
       assert.ok(r.rationale.split(/\s+/).length >= 8, `${r.id} needs a rationale that explains the risk`);
       assert.ok(['error', 'warning', 'hint'].includes(r.severity), `${r.id} has severity ${r.severity}`);
@@ -835,6 +836,135 @@ async function main(): Promise<void> {
       [],
       'a normal media playlist is not an I-frame playlist',
     );
+  });
+
+  // ------------------------------------------------------------- cross-playlist
+  /** A rendition as the cross-check sees it: the master's line, and the loaded playlist. */
+  const rendition = (uri: string, line: number, text: string): LoadedRendition => ({
+    uri,
+    line,
+    bandwidth: null,
+    playlist: parsePlaylist(text),
+  });
+  const timeline = (durations: number[], extra: { version?: number; endlist?: boolean; sequence?: number; discontinuityAt?: number } = {}): string => {
+    const out = ['#EXTM3U', `#EXT-X-VERSION:${extra.version ?? 7}`, '#EXT-X-TARGETDURATION:6'];
+    if (extra.sequence !== undefined) out.push(`#EXT-X-MEDIA-SEQUENCE:${extra.sequence}`);
+    durations.forEach((d, i) => {
+      if (extra.discontinuityAt === i) out.push('#EXT-X-DISCONTINUITY');
+      out.push(`#EXTINF:${d.toFixed(3)},`, `seg-${i}.ts`);
+    });
+    if (extra.endlist ?? true) out.push('#EXT-X-ENDLIST');
+    return out.join('\n');
+  };
+
+  await test('analyzeAcross says nothing when the renditions share a timeline', () => {
+    const found = analyzeAcross([
+      rendition('360p.m3u8', 3, timeline([6, 6, 6])),
+      rendition('720p.m3u8', 5, timeline([6, 6, 6])),
+      rendition('1080p.m3u8', 7, timeline([6, 6, 6])),
+    ]);
+    assert.deepStrictEqual(found, []);
+  });
+
+  await test('analyzeAcross catches a rendition with a different EXT-X-VERSION', () => {
+    const found = analyzeAcross([
+      rendition('360p.m3u8', 3, timeline([6, 6, 6])),
+      rendition('720p.m3u8', 5, timeline([6, 6, 6], { version: 3 })),
+    ]);
+    const versions = found.filter((f) => f.rule === 'cross/version-mismatch');
+    assert.strictEqual(versions.length, 1);
+    assert.strictEqual(versions[0].line, 5, 'reported on the variant line of the master');
+    assert.match(versions[0].message, /720p\.m3u8/);
+    assert.match(versions[0].message, /3/);
+  });
+
+  await test('analyzeAcross catches renditions that do not have the same segments', () => {
+    const shorter = analyzeAcross([
+      rendition('360p.m3u8', 3, timeline([6, 6, 6])),
+      rendition('720p.m3u8', 5, timeline([6, 6])),
+    ]).filter((f) => f.rule === 'cross/segment-count-mismatch');
+    assert.strictEqual(shorter.length, 1);
+    assert.match(shorter[0].message, /3|2/);
+
+    // Same count and same total, boundaries in different places: a player switching
+    // rungs mid-stream lands in the middle of a segment.
+    const drifting = analyzeAcross([
+      rendition('360p.m3u8', 3, timeline([6, 6, 6])),
+      rendition('720p.m3u8', 5, timeline([6, 5, 7])),
+    ]).filter((f) => f.rule === 'cross/timeline-drift');
+    assert.strictEqual(drifting.length, 1);
+    assert.strictEqual(drifting[0].line, 5);
+
+    const rounding = analyzeAcross([
+      rendition('360p.m3u8', 3, timeline([6, 6, 6])),
+      rendition('720p.m3u8', 5, timeline([6.001, 5.999, 6])),
+    ]).filter((f) => f.rule === 'cross/timeline-drift');
+    assert.deepStrictEqual(rounding, [], 'a millisecond of encoder rounding is not drift');
+  });
+
+  await test('analyzeAcross catches discontinuities that do not line up', () => {
+    const found = analyzeAcross([
+      rendition('360p.m3u8', 3, timeline([6, 6, 6], { discontinuityAt: 1 })),
+      rendition('720p.m3u8', 5, timeline([6, 6, 6], { discontinuityAt: 2 })),
+    ]).filter((f) => f.rule === 'cross/discontinuity-mismatch');
+    assert.strictEqual(found.length, 1);
+    assert.strictEqual(found[0].severity, 'error', 'an ad break in the wrong place per rung is a broken switch');
+  });
+
+  await test('analyzeAcross catches live windows that are not aligned', () => {
+    const live = (sequence: number): string => timeline([6, 6, 6], { endlist: false, sequence });
+    const found = analyzeAcross([rendition('360p.m3u8', 3, live(100)), rendition('720p.m3u8', 5, live(97))]);
+    assert.strictEqual(found.filter((f) => f.rule === 'cross/media-sequence-mismatch').length, 1);
+
+    const mixed = analyzeAcross([
+      rendition('360p.m3u8', 3, timeline([6, 6, 6])),
+      rendition('720p.m3u8', 5, timeline([6, 6, 6], { endlist: false })),
+    ]).filter((f) => f.rule === 'cross/playlist-type-mismatch');
+    assert.strictEqual(mixed.length, 1, 'one rung finished and one still live is not one stream');
+  });
+
+  await test('analyzeAcross compares EXT-X-BITRATE with the BANDWIDTH the master declares', () => {
+    const withBitrate = [
+      '#EXTM3U',
+      '#EXT-X-VERSION:7',
+      '#EXT-X-TARGETDURATION:6',
+      '#EXT-X-BITRATE:5200', // kbps, well over the 2.4 Mbps the master promises
+      '#EXTINF:6.000,',
+      'a.ts',
+      '#EXT-X-ENDLIST',
+    ].join('\n');
+    const loaded: LoadedRendition = { uri: '720p.m3u8', line: 5, bandwidth: 2400000, playlist: parsePlaylist(withBitrate) };
+    const found = analyzeAcross([loaded]).filter((f) => f.rule === 'cross/bitrate-vs-declared');
+    assert.strictEqual(found.length, 1);
+    assert.match(found[0].message, /5200|5\.2|2400000|2\.4/);
+
+    const honest: LoadedRendition = { ...loaded, bandwidth: 6000000 };
+    assert.deepStrictEqual(
+      analyzeAcross([honest]).filter((f) => f.rule === 'cross/bitrate-vs-declared'),
+      [],
+      'a BANDWIDTH above the declared peak is what the spec asks for',
+    );
+  });
+
+  await test('analyzeAcross needs more than one rendition for the comparisons', () => {
+    const alone = analyzeAcross([rendition('360p.m3u8', 3, timeline([6, 6, 6]))]);
+    assert.deepStrictEqual(alone, [], 'nothing to compare a single rendition against');
+    assert.deepStrictEqual(analyzeAcross([]), []);
+  });
+
+  await test('every cross rule is in the catalogue, like the single-file ones', () => {
+    const documented = new Set(RULES.map((r) => r.id));
+    const emitted = analyzeAcross([
+      rendition('360p.m3u8', 3, timeline([6, 6, 6], { discontinuityAt: 1 })),
+      rendition('720p.m3u8', 5, timeline([6, 5], { version: 3, endlist: false, sequence: 4, discontinuityAt: 0 })),
+    ]);
+    // Version, live-vs-finished and segment count; the boundary comparisons need an
+    // equal count and are skipped here, which is the point of asserting on the ids.
+    assert.ok(emitted.length >= 3, 'this pair diverges in several ways');
+    for (const finding of emitted) {
+      assert.ok(documented.has(finding.rule), `${finding.rule} is documented`);
+      assert.ok(finding.rule.startsWith('cross/'), `${finding.rule} is in the cross category`);
+    }
   });
 
   // ------------------------------------------------------------------ spec docs

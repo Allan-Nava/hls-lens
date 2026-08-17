@@ -10,7 +10,7 @@
 
 An `.m3u8` file is a list of claims, and a text editor shows you all of them equally. HLS Lens reads the manifest the way someone who has debugged a stream reads it: a wildcard where a hostname should be, a segment longer than the target duration it declares, a `PROGRAM-DATE-TIME` that walks away from the media timeline, an fMP4 playlist with no init segment, a content key fetched over plaintext HTTP.
 
-**39 rules, on the line you have to fix**, while you edit:
+**47 rules, on the line you have to fix**, while you edit:
 
 ```m3u8
 #EXTM3U
@@ -35,6 +35,7 @@ Plus the ladder as a tree, clickable child playlists, and — when you point it 
 - **The spec on hover.** Hovering a tag says what it does, which `EXT-X-VERSION` it needs, where it is legal and every attribute it accepts with its enumerated values — the reference in the editor instead of a browser tab.
 - **Completions that know the tag.** `#` offers the tags that belong in *this* kind of playlist, `,` the attributes the tag accepts and not the ones already on the line, `=` the legal values (`YES`/`NO`, `VOD`/`EVENT`, `AUDIO`/`VIDEO`/`SUBTITLES`/`CLOSED-CAPTIONS`).
 - **Quick fixes for the mechanical findings.** Bump `EXT-X-VERSION` to what the playlist already uses, append a missing `EXT-X-ENDLIST`, raise `EXT-X-TARGETDURATION` to the longest segment. Only those: a fix that needs a judgement call is not offered.
+- **The renditions compared with each other.** `HLS Lens: Check Renditions Together` loads every rung of the open master — from disk or from the CDN — and reports what they disagree about: a different `EXT-X-VERSION`, segment counts that do not match, boundaries that drift, discontinuities one segment out, one rung that already ended while the others are live. Every rendition is a valid playlist on its own; these defects only exist between them, and they are what a player hits the moment it switches rungs.
 - **A status bar line** that says what the open manifest is: `4 variants · 360p→1080p · 0.88 Mbps–6.10 Mbps · 3 alternate renditions`.
 
 ## The rules, in one paragraph
@@ -51,8 +52,8 @@ From the Marketplace: search **HLS Lens**. Or build the `.vsix` yourself:
 
 ```bash
 npm install
-npm run package        # → hls-lens-0.5.0.vsix
-code --install-extension hls-lens-0.5.0.vsix
+npm run package        # → hls-lens-0.6.0.vsix
+code --install-extension hls-lens-0.6.0.vsix
 ```
 
 For the deep check, install segcheck (`brew install --cask allan-nava/tap/segcheck`, or a binary from [its releases](https://github.com/Allan-Nava/segcheck/releases)) and point `hlsLens.segcheck.path` at it if it is not on your `PATH`.
@@ -62,6 +63,7 @@ For the deep check, install segcheck (`brew install --cask allan-nava/tap/segche
 | Command | What it does |
 |---|---|
 | `HLS Lens: Open Manifest URL…` | Fetch a playlist into a read-only editor, diagnostics included |
+| `HLS Lens: Check Renditions Together` | Load every rung of the master and report what they disagree about |
 | `HLS Lens: Deep Check Segments (segcheck)` | Download and parse the segments, bring the findings back |
 | `HLS Lens: Show Rule Reference` | The rule catalogue, from the extension itself |
 | `HLS Lens: Copy Resolved URI` | Absolute URI of the selected tree row |
@@ -86,7 +88,7 @@ For the deep check, install segcheck (`brew install --cask allan-nava/tap/segche
 
 ## Design notes
 
-- **The logic is a pure core.** `src/core/` never imports `vscode`: the parser, the 39 rules, the ladder model, URI resolution, the segcheck bridge — and even the backlog parser and the icon generator — are plain TypeScript with tests. `src/extension.ts` only translates that model into diagnostics, tree items and links, and the scripts in `scripts/` are I/O over the same core.
+- **The logic is a pure core.** `src/core/` never imports `vscode`: the parser, the 47 rules, the ladder model, URI resolution, the segcheck bridge — and even the backlog parser and the icon generator — are plain TypeScript with tests. `src/extension.ts` only translates that model into diagnostics, tree items and links, and the scripts in `scripts/` are I/O over the same core.
 - **Line numbers everywhere, 0-based.** The parser keeps the line index of every tag, URI, `EXTINF` and `PROGRAM-DATE-TIME` it decodes, because a finding that cannot point at a line is just a linter you have to read twice.
 - **Attribute lists are parsed, not split.** `CODECS="avc1.4d401f,mp4a.40.2"` is one value with a comma in it; splitting the line on commas is how a manifest gets reported as codec-less.
 - **No dependencies.** Not one runtime dependency; the fetcher is `node:http(s)` and even the Marketplace icon is generated (`npm run icon`) rather than pulled from a toolchain.
@@ -113,7 +115,7 @@ to Open VSX:
 
 ```bash
 # after the changelog entry and the version bump
-git tag -a v0.5.0 -m "Release 0.5.0" && git push origin main --follow-tags
+git tag -a v0.6.0 -m "Release 0.6.0" && git push origin main --follow-tags
 ```
 
 The two store credentials live in the `marketplace` environment, which is also where you can require

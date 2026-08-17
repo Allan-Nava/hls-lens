@@ -65,6 +65,21 @@ Three findings come with a quick fix (the lightbulb, or `⌘.`):
 
 Nothing else is offered a fix. A missing `CODECS` string, a badly spaced ladder or a key served over plaintext HTTP all need a decision that an editor command has no business making.
 
+## Checking the renditions together
+
+`HLS Lens: Check Renditions Together` reads every playable rung of the open master — over HTTP when the master came from a URL, off disk when it is a file — and compares them with each other. The findings land in the Problems panel on the master's own `EXT-X-STREAM-INF` lines, in their own collection, because that is the line that names the rendition that diverges.
+
+| The renditions disagree about | Why it matters |
+|---|---|
+| `EXT-X-VERSION` | A player honours the version of the playlist it happens to be reading |
+| `EXT-X-TARGETDURATION` | Buffering and the reload interval are sized on it |
+| Segment count, or where the boundaries fall | A switch continues at the boundary the player knows: drift lands mid-picture |
+| Discontinuity positions | An ad break one segment out breaks the switch exactly where the stream already changes |
+| Live or finished, and the media sequence | One rung with `EXT-X-ENDLIST` strands every player that switches to it |
+| `BANDWIDTH` against the rendition's own `EXT-X-BITRATE` | ABR provisions against `BANDWIDTH`; understating it picks a rung the connection cannot carry |
+
+Only the playable video rungs are compared. An alternate audio or subtitle rendition is legitimately segmented differently, and reporting that as drift would be a finding that is not one. A rendition that cannot be read is listed in the **HLS Lens** output channel and skipped, so one unreachable rung does not hide the others.
+
 ## Deep check
 
 **HLS Lens: Deep Check Segments (segcheck)** answers the questions a manifest cannot:

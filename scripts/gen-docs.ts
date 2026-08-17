@@ -12,10 +12,16 @@ import { RULES } from '../src/core/analyze';
 
 const OUT = path.join('docs', 'RULES.md');
 
-const scopes: Array<{ id: 'syntax' | 'master' | 'media'; title: string; blurb: string }> = [
+const scopes: Array<{ id: 'syntax' | 'master' | 'media' | 'cross'; title: string; blurb: string }> = [
   { id: 'syntax', title: 'Structure', blurb: 'Rules about the file being a playlist at all.' },
   { id: 'master', title: 'Master playlist', blurb: 'Rules about the ladder and the rendition groups.' },
   { id: 'media', title: 'Media playlist', blurb: 'Rules about segments, timing, keys and the live window.' },
+  {
+    id: 'cross',
+    title: 'Across playlists',
+    blurb:
+      'Rules that need the master and its renditions at once, from `HLS Lens: Check Renditions Together`. Every rendition is a valid playlist on its own; these are the ways they can disagree with each other.',
+  },
 ];
 
 const lines: string[] = [
@@ -23,7 +29,8 @@ const lines: string[] = [
   '',
   '# Rules',
   '',
-  `HLS Lens ships ${RULES.length} rules. Each one reads the manifest only — the claims — and points at the line you have to fix.`,
+  `HLS Lens ships ${RULES.length} rules. Most read one manifest — the claims it makes — and point at the line you have to fix;`,
+  'the `cross/*` rules read the master and its renditions together and report on the variant line of the master.',
   'For the defects that need the segment bytes (a gap that no `EXT-X-DISCONTINUITY` declares, a 1080p rung that codes 720p),',
   'run the deep check, which brings [segcheck](https://github.com/Allan-Nava/segcheck) findings into the same Problems panel.',
   '',

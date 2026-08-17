@@ -13,6 +13,7 @@ import { buildSegcheckArgs, parseSegcheckResult, segcheckSummary, segcheckToFind
 import { fetchText } from './core/fetch';
 import { completeAt, renderTagHover, tagSpec } from './core/spec';
 import { quickFixesFor } from './core/fixes';
+import { analyzeAcross, LoadedRendition } from './core/crosscheck';
 import { isRemote, looksLikePlaylistUri, resolveUri } from './core/uri';
 
 /** Scheme of the read-only documents holding manifests fetched from a URL. */
@@ -23,6 +24,7 @@ const fetched = new Map<string, string>();
 
 let diagnostics: vscode.DiagnosticCollection;
 let deepDiagnostics: vscode.DiagnosticCollection;
+let crossDiagnostics: vscode.DiagnosticCollection;
 let output: vscode.OutputChannel;
 let statusBar: vscode.StatusBarItem;
 let tree: ManifestTreeProvider;
@@ -30,6 +32,9 @@ let tree: ManifestTreeProvider;
 export function activate(context: vscode.ExtensionContext): void {
   diagnostics = vscode.languages.createDiagnosticCollection('hls-lens');
   deepDiagnostics = vscode.languages.createDiagnosticCollection('hls-lens-segcheck');
+  // Its own collection, like segcheck's: these findings cost a round of network or disk
+  // reads, and the manifest collection is rewritten on every keystroke.
+  crossDiagnostics = vscode.languages.createDiagnosticCollection('hls-lens-cross');
   output = vscode.window.createOutputChannel('HLS Lens');
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   tree = new ManifestTreeProvider();
@@ -37,6 +42,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     diagnostics,
     deepDiagnostics,
+    crossDiagnostics,
     output,
     statusBar,
     vscode.window.registerTreeDataProvider('hlsLens.explorer', tree),
@@ -66,6 +72,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.onDidCloseTextDocument((doc) => {
       diagnostics.delete(doc.uri);
       deepDiagnostics.delete(doc.uri);
+      crossDiagnostics.delete(doc.uri);
       fetched.delete(doc.uri.toString());
       refresh();
     }),
@@ -92,6 +99,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('hlsLens.revealLine', (line: number) => revealLine(line)),
     vscode.commands.registerCommand('hlsLens.deepCheck', () => deepCheck()),
     vscode.commands.registerCommand('hlsLens.showRules', () => showRules()),
+    vscode.commands.registerCommand('hlsLens.checkTogether', () => checkTogether()),
   );
 
   for (const doc of vscode.workspace.textDocuments) updateDiagnostics(doc);
@@ -645,4 +653,75 @@ class PlaylistFixProvider implements vscode.CodeActionProvider {
     }
     return actions;
   }
+}
+
+/**
+ * Loads the renditions of the open master and compares them with each other.
+ *
+ * Only the playable variants: an audio-only or subtitle rendition is legitimately
+ * segmented differently, and comparing it with the video would report a defect that
+ * is not one. A rendition that cannot be loaded is reported and skipped rather than
+ * failing the whole check — one unreachable rung should not hide the others.
+ */
+async function checkTogether(): Promise<void> {
+  const active = activeManifest();
+  if (!active) {
+    void vscode.window.showWarningMessage('HLS Lens: open a master playlist first.');
+    return;
+  }
+  const variants = active.playlist.variants.filter((v) => !v.iframeOnly && v.uri);
+  if (variants.length < 2) {
+    void vscode.window.showWarningMessage('HLS Lens: this playlist has fewer than two renditions to compare.');
+    return;
+  }
+
+  const config = vscode.workspace.getConfiguration('hlsLens');
+  const loaded: LoadedRendition[] = [];
+  const unreachable: string[] = [];
+
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: 'HLS Lens: reading the renditions', cancellable: true },
+    async (progress, token) => {
+      for (const [index, variant] of variants.entries()) {
+        if (token.isCancellationRequested) return;
+        progress.report({ message: `${index + 1}/${variants.length} ${variant.uri}`, increment: 100 / variants.length });
+        const resolved = resolveUri(active.location, variant.uri);
+        try {
+          const text = isRemote(resolved)
+            ? (
+                await fetchText(resolved, {
+                  headers: config.get<Record<string, string>>('request.headers', {}),
+                  timeoutMs: config.get<number>('request.timeoutMs', 15000),
+                })
+              ).text
+            : Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.file(resolved))).toString('utf8');
+          loaded.push({ uri: variant.uri, line: variant.line, bandwidth: variant.bandwidth, playlist: parsePlaylist(text) });
+        } catch (err) {
+          unreachable.push(`${variant.uri}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    },
+  );
+
+  const findings = analyzeAcross(loaded);
+  const skip = config.get<string[]>('diagnostics.skip', []);
+  const kept = findings.filter((f) => !skip.includes(f.rule) && !skip.includes(f.rule.split('/')[0]));
+  crossDiagnostics.set(
+    active.doc.uri,
+    kept.map((f) => {
+      // Same rendering as the manifest diagnostics, with its own source so the two
+      // collections stay distinguishable in the Problems panel.
+      const diagnostic = toDiagnostic(active.doc, f);
+      diagnostic.source = 'hls-lens-cross';
+      return diagnostic;
+    }),
+  );
+
+  for (const failure of unreachable) output.appendLine(`could not read ${failure}`);
+  const skipped = unreachable.length > 0 ? `, ${unreachable.length} unreachable (see the output)` : '';
+  void vscode.window.showInformationMessage(
+    kept.length === 0
+      ? `HLS Lens: ${loaded.length} renditions agree${skipped}.`
+      : `HLS Lens: ${kept.length} finding(s) across ${loaded.length} renditions${skipped}.`,
+  );
 }

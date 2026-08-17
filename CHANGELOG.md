@@ -3,6 +3,25 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.6.0] - 2026-08-17
+
+Le prime regole che leggono più di un file: il master e le sue rendition insieme. 39 → 47 regole.
+
+### Aggiunto
+
+- **`src/core/crosscheck.ts`** (HL-7) e la categoria **`cross/*`**, otto regole per i difetti che *esistono solo fra le rendition* — ogni playlist, presa da sola, è valida:
+  - `cross/version-mismatch`, `cross/target-duration-mismatch`: un player onora la versione della playlist che sta leggendo, e bufferizza sul target duration che trova.
+  - `cross/segment-count-mismatch` ed `cross/timeline-drift`: conteggi diversi, oppure lo stesso conteggio con le boundary in punti diversi. Il secondo è il caso cattivo, perché non si vede da nessun file: chi cambia gradino riprende dalla boundary che conosce e finisce a metà immagine. Tolleranza di default 50ms, che lascia passare l'arrotondamento di un encoder (un frame a 25fps sono 40ms) e non mezzo secondo di offset vero.
+  - `cross/discontinuity-mismatch`: un ad break un segmento più in là su un gradino rompe lo switch esattamente dove lo stream sta già cambiando.
+  - `cross/playlist-type-mismatch`, `cross/media-sequence-mismatch`: un gradino con `EXT-X-ENDLIST` mentre gli altri sono live pianta ogni player che ci passa; finestre sfalsate fanno saltare avanti o indietro nel tempo chi cambia rendition.
+  - `cross/bitrate-vs-declared` (HL-3): il `BANDWIDTH` del master contro l'`EXT-X-BITRATE` che la rendition dichiara di sé. Esce qui e non in `media/*` come diceva la voce originale, perché il confronto ha bisogno dei due file nello stesso posto.
+- **Comando `HLS Lens: Check Renditions Together`**: carica ogni gradino giocabile del master aperto — da disco o dal CDN, secondo da dove viene il master — e scrive i finding in una **collection di diagnostics propria**, ancorati alla riga dell'`EXT-X-STREAM-INF` che nomina la rendition divergente. Una rendition irraggiungibile viene elencata nell'output channel e saltata: un gradino irraggiungibile non deve nascondere gli altri.
+
+### Note di progetto
+
+- **Si confrontano solo i gradini video giocabili.** Una rendition audio o di sottotitoli è legittimamente segmentata in modo diverso, e riportarlo come drift sarebbe un finding che non è un difetto.
+- `docs/RULES.md` ha ora una quarta sezione, *Across playlists*, e `RuleDoc.scope` accetta `cross`.
+
 ## [0.5.0] - 2026-08-17
 
 La specifica dentro l'editor: hover, completion e i quick fix per i finding che una modifica può chiudere da sola.
@@ -120,6 +139,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.6.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.4.0
 [0.3.3]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.3.3
