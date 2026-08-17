@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**16 of 21 items done** · `███████░░░` 76%
+**18 of 21 items done** · `████████░░` 86%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -18,8 +18,9 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [v0.4.0 — Rules that pay for themselves](#v040--rules-that-pay-for-themselves) | ✅ shipped | 5/5 |
 | [v0.5.0 — Editor](#v050--editor) | ✅ shipped | 3/3 |
 | [v0.6.0 — More than one file at a time](#v060--more-than-one-file-at-a-time) | ✅ shipped | 2/2 |
+| [v0.7.0 — Watching a stream move](#v070--watching-a-stream-move) | ✅ shipped | 2/2 |
 | [Docs and site](#docs-and-site) | ⏳ planned | 0/1 |
-| [More than one file at a time](#more-than-one-file-at-a-time) | ⏳ planned | 0/3 |
+| [More than one file at a time](#more-than-one-file-at-a-time) | ⏳ planned | 0/1 |
 | [Later — DASH](#later--dash) | ⏳ planned | 0/1 |
 
 ## v0.1.0 — Reading manifests
@@ -92,6 +93,13 @@ The first rules that need the master and its renditions at once.
 - [x] **HL-7 — Cross-playlist rules**: `src/core/crosscheck.ts` with eight `cross/*` rules — same `EXT-X-VERSION`, same `EXT-X-TARGETDURATION`, same segment count, boundaries that land at the same time, discontinuities on the same segment, live windows that start together, and one rung that ended while the others are live. Findings anchor to the `EXT-X-STREAM-INF` line of the master, which is the file the operator has open. The command `HLS Lens: Check Renditions Together` loads the rungs from disk or from the CDN into their own diagnostic collection.
 - [x] **HL-3 — `cross/bitrate-vs-declared`**: shipped with HL-7, as the id says — the comparison needs the master's `BANDWIDTH` and the rendition's own `EXT-X-BITRATE` in the same place, so it belongs in the cross category rather than in `media/*` as the original item guessed.
 
+## v0.7.0 — Watching a stream move
+
+✅ shipped · 2 of 2 · `██████████`
+
+- [x] **HL-13 — Live watch**: `src/core/watch.ts` diffs two reloads of the same playlist — new segments, what slid off the front, a discontinuity that appeared, an `EXT-X-ENDLIST` that arrived, and a window that did not move at all. Segments are matched by URI, not by index, because the index changes every time the window slides. `HLS Lens: Watch Live Playlist` polls on the manifest's own target duration (floored at 2s), reports in the output channel, warns after two stalled reloads and stops itself when the stream ends.
+- [x] **HL-14 — Deep check on a selection**: right-click a rendition in the tree for `HLS Lens: Deep Check This Rendition`, which points segcheck at that rung's resolved URL instead of the whole master.
+
 ## Docs and site
 
 ⏳ planned · 0 of 1 · `░░░░░░░░░░`
@@ -102,11 +110,9 @@ The first rules that need the master and its renditions at once.
 
 Everything that needs the master and its variants together, or the same playlist over time.
 
-⏳ planned · 0 of 3 · `░░░░░░░░░░`
+⏳ planned · 0 of 1 · `░░░░░░░░░░`
 
 - [ ] **HL-12 — Timeline webview**: segments as a strip with discontinuities, gaps and ad breaks marked, and the renditions stacked to show whether they are aligned.
-- [ ] **HL-13 — Live watch**: reload a live playlist on its target duration and report what changed (new segments, a window that stopped sliding, a discontinuity that appeared).
-- [ ] **HL-14 — Deep check on a selection**: run segcheck against a single variant picked in the tree rather than the whole master.
 
 ## Later — DASH
 

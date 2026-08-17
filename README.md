@@ -36,6 +36,7 @@ Plus the ladder as a tree, clickable child playlists, and — when you point it 
 - **Completions that know the tag.** `#` offers the tags that belong in *this* kind of playlist, `,` the attributes the tag accepts and not the ones already on the line, `=` the legal values (`YES`/`NO`, `VOD`/`EVENT`, `AUDIO`/`VIDEO`/`SUBTITLES`/`CLOSED-CAPTIONS`).
 - **Quick fixes for the mechanical findings.** Bump `EXT-X-VERSION` to what the playlist already uses, append a missing `EXT-X-ENDLIST`, raise `EXT-X-TARGETDURATION` to the longest segment. Only those: a fix that needs a judgement call is not offered.
 - **The renditions compared with each other.** `HLS Lens: Check Renditions Together` loads every rung of the open master — from disk or from the CDN — and reports what they disagree about: a different `EXT-X-VERSION`, segment counts that do not match, boundaries that drift, discontinuities one segment out, one rung that already ended while the others are live. Every rendition is a valid playlist on its own; these defects only exist between them, and they are what a player hits the moment it switches rungs.
+- **Watch a live playlist.** `HLS Lens: Watch Live Playlist` reloads the manifest on its own target duration and says what changed each time: the new segments, what slid off the front, a discontinuity that appeared, an `EXT-X-ENDLIST` that arrived. A window that stops moving for two reloads is reported — that is the packager falling over, and it looks identical to a healthy stream in any single snapshot.
 - **A status bar line** that says what the open manifest is: `4 variants · 360p→1080p · 0.88 Mbps–6.10 Mbps · 3 alternate renditions`.
 
 ## The rules, in one paragraph
@@ -52,8 +53,8 @@ From the Marketplace: search **HLS Lens**. Or build the `.vsix` yourself:
 
 ```bash
 npm install
-npm run package        # → hls-lens-0.6.0.vsix
-code --install-extension hls-lens-0.6.0.vsix
+npm run package        # → hls-lens-0.7.0.vsix
+code --install-extension hls-lens-0.7.0.vsix
 ```
 
 For the deep check, install segcheck (`brew install --cask allan-nava/tap/segcheck`, or a binary from [its releases](https://github.com/Allan-Nava/segcheck/releases)) and point `hlsLens.segcheck.path` at it if it is not on your `PATH`.
@@ -64,6 +65,8 @@ For the deep check, install segcheck (`brew install --cask allan-nava/tap/segche
 |---|---|
 | `HLS Lens: Open Manifest URL…` | Fetch a playlist into a read-only editor, diagnostics included |
 | `HLS Lens: Check Renditions Together` | Load every rung of the master and report what they disagree about |
+| `HLS Lens: Watch Live Playlist` | Reload the live playlist and report what changes; click the status bar to stop |
+| `HLS Lens: Deep Check This Rendition` | Run segcheck against one rung picked in the tree, not the whole master |
 | `HLS Lens: Deep Check Segments (segcheck)` | Download and parse the segments, bring the findings back |
 | `HLS Lens: Show Rule Reference` | The rule catalogue, from the extension itself |
 | `HLS Lens: Copy Resolved URI` | Absolute URI of the selected tree row |
@@ -85,6 +88,7 @@ For the deep check, install segcheck (`brew install --cask allan-nava/tap/segche
 | `hlsLens.segcheck.renditions` | `0` | Video renditions to inspect (0 = all) |
 | `hlsLens.segcheck.from` | `auto` | Sample at the live edge, at the start, or let segcheck decide |
 | `hlsLens.segcheck.insecure` | `false` | Skip TLS verification — lab servers only |
+| `hlsLens.watch.intervalSeconds` | `0` | Reload interval for the watch; 0 follows `EXT-X-TARGETDURATION` |
 
 ## Design notes
 
@@ -115,7 +119,7 @@ to Open VSX:
 
 ```bash
 # after the changelog entry and the version bump
-git tag -a v0.6.0 -m "Release 0.6.0" && git push origin main --follow-tags
+git tag -a v0.7.0 -m "Release 0.7.0" && git push origin main --follow-tags
 ```
 
 The two store credentials live in the `marketplace` environment, which is also where you can require

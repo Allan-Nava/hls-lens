@@ -14,6 +14,7 @@ import { fetchText } from './core/fetch';
 import { completeAt, renderTagHover, tagSpec } from './core/spec';
 import { quickFixesFor } from './core/fixes';
 import { analyzeAcross, LoadedRendition } from './core/crosscheck';
+import { describeChange, diffPlaylists, watchIntervalMs } from './core/watch';
 import { isRemote, looksLikePlaylistUri, resolveUri } from './core/uri';
 
 /** Scheme of the read-only documents holding manifests fetched from a URL. */
@@ -100,6 +101,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('hlsLens.deepCheck', () => deepCheck()),
     vscode.commands.registerCommand('hlsLens.showRules', () => showRules()),
     vscode.commands.registerCommand('hlsLens.checkTogether', () => checkTogether()),
+    vscode.commands.registerCommand('hlsLens.deepCheckVariant', (node?: TreeNode) => deepCheckVariant(node)),
+    vscode.commands.registerCommand('hlsLens.watch', () => toggleWatch()),
   );
 
   for (const doc of vscode.workspace.textDocuments) updateDiagnostics(doc);
@@ -206,9 +209,12 @@ function updateStatusBar(): void {
     statusBar.hide();
     return;
   }
-  statusBar.text = `$(list-tree) ${ladderSummary(active.playlist)}`;
-  statusBar.tooltip = 'HLS Lens — click to open the manifest tree';
-  statusBar.command = 'hlsLens.refresh';
+  // While the watch runs, the status bar is where it lives: a poller with no visible
+  // state is a poller nobody remembers is running.
+  const watch = watching ? `$(eye) watching${watching.stalls > 0 ? ` · stalled ×${watching.stalls}` : ''} · ` : '';
+  statusBar.text = `${watch}$(list-tree) ${ladderSummary(active.playlist)}`;
+  statusBar.tooltip = watching ? 'HLS Lens — click to stop watching the playlist' : 'HLS Lens — click to open the manifest tree';
+  statusBar.command = watching ? 'hlsLens.watch' : 'hlsLens.refresh';
   statusBar.show();
 }
 
@@ -463,17 +469,22 @@ async function showRules(): Promise<void> {
  * Only a URL can be deep-checked: the segments live next to the manifest on the
  * CDN, so a playlist open from disk is asked for its origin rather than guessed at.
  */
-async function deepCheck(): Promise<void> {
+async function deepCheck(preset?: string): Promise<void> {
   const active = activeManifest();
   const suggested = active && isRemote(active.location) ? active.location : '';
-  const url = await vscode.window.showInputBox({
+  // A preset URL comes from the tree: the rendition the user picked, already resolved.
+  const url = preset ?? (await vscode.window.showInputBox({
     title: 'Deep check with segcheck',
     prompt: 'Manifest URL to download and inspect',
     value: suggested,
     placeHolder: 'https://cdn.example.com/hls/master.m3u8',
     validateInput: (value) => (isRemote(value.trim()) ? undefined : 'segcheck downloads segments, so it needs an http(s) URL'),
-  });
+  }));
   if (!url) return;
+  if (!isRemote(url)) {
+    void vscode.window.showWarningMessage('HLS Lens: segcheck downloads segments, so it needs an http(s) URL.');
+    return;
+  }
 
   const config = vscode.workspace.getConfiguration('hlsLens');
   const bin = config.get<string>('segcheck.path', 'segcheck');
@@ -724,4 +735,118 @@ async function checkTogether(): Promise<void> {
       ? `HLS Lens: ${loaded.length} renditions agree${skipped}.`
       : `HLS Lens: ${kept.length} finding(s) across ${loaded.length} renditions${skipped}.`,
   );
+}
+
+/** HL-14: the deep check pointed at one rendition picked in the tree. */
+async function deepCheckVariant(node?: TreeNode): Promise<void> {
+  const active = activeManifest();
+  if (!node?.uri || !active) {
+    void vscode.window.showWarningMessage('HLS Lens: pick a rendition in the HLS view first.');
+    return;
+  }
+  const resolved = resolveUri(active.location, node.uri);
+  if (!isRemote(resolved)) {
+    void vscode.window.showWarningMessage(`HLS Lens: segcheck needs an http(s) URL; "${resolved}" is a local path.`);
+    return;
+  }
+  await deepCheck(resolved);
+}
+
+/** The live watch: one poller at a time, on one playlist. */
+interface Watch {
+  timer: NodeJS.Timeout;
+  url: string;
+  doc: vscode.Uri;
+  previous: Playlist;
+  stalls: number;
+}
+let watching: Watch | undefined;
+
+/** Consecutive stalled reloads before saying so: one is a slow packager, two is a problem. */
+const STALLS_BEFORE_WARNING = 2;
+
+function toggleWatch(): void {
+  if (watching) {
+    stopWatch('stopped');
+    return;
+  }
+  const active = activeManifest();
+  if (!active) {
+    void vscode.window.showWarningMessage('HLS Lens: open a manifest first.');
+    return;
+  }
+  if (!isRemote(active.location)) {
+    void vscode.window.showWarningMessage('HLS Lens: the watch reloads the playlist over HTTP, so it needs a manifest opened from a URL.');
+    return;
+  }
+  if (active.playlist.hasEndList) {
+    void vscode.window.showWarningMessage('HLS Lens: this playlist has EXT-X-ENDLIST — there is nothing left to watch.');
+    return;
+  }
+
+  const interval = watchIntervalMs(active.playlist, vscode.workspace.getConfiguration('hlsLens').get<number>('watch.intervalSeconds', 0));
+  output.appendLine(`watch: ${active.location} every ${interval / 1000}s`);
+  output.show(true);
+  watching = {
+    timer: setInterval(() => void pollWatch(), interval),
+    url: active.location,
+    doc: active.doc.uri,
+    previous: active.playlist,
+    stalls: 0,
+  };
+  updateStatusBar();
+  void vscode.window.showInformationMessage(`HLS Lens: watching the playlist every ${interval / 1000}s.`);
+}
+
+function stopWatch(reason: string): void {
+  if (!watching) return;
+  clearInterval(watching.timer);
+  output.appendLine(`watch: ${reason}`);
+  watching = undefined;
+  updateStatusBar();
+}
+
+async function pollWatch(): Promise<void> {
+  const current = watching;
+  if (!current) return;
+  const config = vscode.workspace.getConfiguration('hlsLens');
+  let text: string;
+  try {
+    text = (
+      await fetchText(current.url, {
+        headers: config.get<Record<string, string>>('request.headers', {}),
+        timeoutMs: config.get<number>('request.timeoutMs', 15000),
+      })
+    ).text;
+  } catch (err) {
+    // A failed reload is worth saying once, but it does not stop the watch: a live
+    // edge that 404s for one poll is a normal thing on a CDN.
+    output.appendLine(`watch: reload failed — ${(err as Error).message}`);
+    return;
+  }
+
+  const next = parsePlaylist(text);
+  const change = diffPlaylists(current.previous, next);
+  current.previous = next;
+  output.appendLine(`watch: ${describeChange(change)}`);
+
+  if (change.endedNow) {
+    void vscode.window.showInformationMessage('HLS Lens: the playlist gained EXT-X-ENDLIST — the stream ended.');
+    stopWatch('the stream ended');
+    return;
+  }
+  if (change.discontinuities.length > 0) {
+    void vscode.window.showWarningMessage(`HLS Lens: a discontinuity appeared at ${change.discontinuities.join(', ')}.`);
+  }
+  if (change.stalled) {
+    current.stalls++;
+    if (current.stalls === STALLS_BEFORE_WARNING) {
+      void vscode.window.showWarningMessage(
+        `HLS Lens: the live window has not moved for ${STALLS_BEFORE_WARNING} reloads — the packager may have stopped.`,
+      );
+    }
+  } else {
+    current.stalls = 0;
+  }
+  updateStatusBar();
 }

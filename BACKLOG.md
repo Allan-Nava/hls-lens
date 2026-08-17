@@ -78,6 +78,11 @@ The first rules that need the master and its renditions at once.
 - [x] **HL-7 — Cross-playlist rules**: `src/core/crosscheck.ts` with eight `cross/*` rules — same `EXT-X-VERSION`, same `EXT-X-TARGETDURATION`, same segment count, boundaries that land at the same time, discontinuities on the same segment, live windows that start together, and one rung that ended while the others are live. Findings anchor to the `EXT-X-STREAM-INF` line of the master, which is the file the operator has open. The command `HLS Lens: Check Renditions Together` loads the rungs from disk or from the CDN into their own diagnostic collection.
 - [x] **HL-3 — `cross/bitrate-vs-declared`**: shipped with HL-7, as the id says — the comparison needs the master's `BANDWIDTH` and the rendition's own `EXT-X-BITRATE` in the same place, so it belongs in the cross category rather than in `media/*` as the original item guessed.
 
+## v0.7.0 — Watching a stream move
+
+- [x] **HL-13 — Live watch**: `src/core/watch.ts` diffs two reloads of the same playlist — new segments, what slid off the front, a discontinuity that appeared, an `EXT-X-ENDLIST` that arrived, and a window that did not move at all. Segments are matched by URI, not by index, because the index changes every time the window slides. `HLS Lens: Watch Live Playlist` polls on the manifest's own target duration (floored at 2s), reports in the output channel, warns after two stalled reloads and stops itself when the stream ends.
+- [x] **HL-14 — Deep check on a selection**: right-click a rendition in the tree for `HLS Lens: Deep Check This Rendition`, which points segcheck at that rung's resolved URL instead of the whole master.
+
 ## Docs and site
 
 - [ ] **HL-16 — Documentation site**: GitHub Pages from `docs/`, with the generated rule reference as its reference section and the roadmap as its plan (the sibling lenses already do this).
@@ -93,8 +98,6 @@ computable from the declarations alone.
 Everything that needs the master and its variants together, or the same playlist over time.
 
 - [ ] **HL-12 — Timeline webview**: segments as a strip with discontinuities, gaps and ad breaks marked, and the renditions stacked to show whether they are aligned.
-- [ ] **HL-13 — Live watch**: reload a live playlist on its target duration and report what changed (new segments, a window that stopped sliding, a discontinuity that appeared).
-- [ ] **HL-14 — Deep check on a selection**: run segcheck against a single variant picked in the tree rather than the whole master.
 
 ## Later — DASH
 

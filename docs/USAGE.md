@@ -80,6 +80,19 @@ Nothing else is offered a fix. A missing `CODECS` string, a badly spaced ladder 
 
 Only the playable video rungs are compared. An alternate audio or subtitle rendition is legitimately segmented differently, and reporting that as drift would be a finding that is not one. A rendition that cannot be read is listed in the **HLS Lens** output channel and skipped, so one unreachable rung does not hide the others.
 
+## Watching a live playlist
+
+`HLS Lens: Watch Live Playlist` reloads a manifest opened from a URL and reports what changed, in the **HLS Lens** output channel, at the interval the playlist itself declares — `EXT-X-TARGETDURATION`, floored at two seconds so a low-latency playlist does not turn the watch into a load test. `hlsLens.watch.intervalSeconds` overrides it.
+
+What it tells you between two reloads:
+
+- the new segments, and how many slid off the front of the window;
+- a **discontinuity** that appeared, by segment name;
+- an `EXT-X-ENDLIST` that arrived — the stream ended, and the watch stops itself;
+- a window that **did not move for two reloads**, which is the packager having stopped. In any single snapshot that looks exactly like a healthy stream.
+
+The status bar shows `$(eye) watching` while it runs, with the stall count when there is one; clicking it stops the watch. Segments are matched by URI rather than by index, so a packager that renumbers does not report the whole window as new.
+
 ## Deep check
 
 **HLS Lens: Deep Check Segments (segcheck)** answers the questions a manifest cannot:
@@ -98,7 +111,7 @@ It needs a URL (the segments live next to the manifest on the CDN) and the [segc
 brew install --cask allan-nava/tap/segcheck
 ```
 
-Point `hlsLens.segcheck.path` at it if it is not on your `PATH`. The findings land in the Problems panel in their own collection — editing the manifest does not clear them — and the full run is in the **HLS Lens** output channel. `hlsLens.segcheck.segments`, `.renditions` and `.from` control how much it samples; the run is cancellable from the progress notification.
+Point `hlsLens.segcheck.path` at it if it is not on your `PATH`. To inspect one rung rather than the whole master, right-click a variant in the HLS view and pick **Deep Check This Rendition**. The findings land in the Problems panel in their own collection — editing the manifest does not clear them — and the full run is in the **HLS Lens** output channel. `hlsLens.segcheck.segments`, `.renditions` and `.from` control how much it samples; the run is cancellable from the progress notification.
 
 Everything else in the extension works without the binary. Only the deep check needs it.
 

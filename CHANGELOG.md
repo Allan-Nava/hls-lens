@@ -3,6 +3,17 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.7.0] - 2026-08-17
+
+Guardare uno stream muoversi, invece di fotografarlo.
+
+### Aggiunto
+
+- **Live watch** (HL-13): `HLS Lens: Watch Live Playlist` ricarica un manifest aperto da URL all'intervallo che la playlist stessa dichiara (`EXT-X-TARGETDURATION`, con **pavimento a 2 secondi** perché una playlist low-latency che dichiara 1s non deve trasformare il watch in un load test sull'edge di qualcuno) e dice cosa è cambiato: i segmenti nuovi, quanti sono usciti dalla finestra, una discontinuità comparsa, un `EXT-X-ENDLIST` arrivato — e in quel caso si ferma da solo. Una **finestra che non si muove per due ricariche** viene segnalata: è il packager che si è fermato, e in una singola fotografia è indistinguibile da uno stream sano. La status bar mostra `$(eye) watching` col conteggio degli stalli, e cliccarla ferma il watch.
+  Il diff sta nel core (`src/core/watch.ts`), senza clock e senza rete: **i segmenti si confrontano per URI, non per indice**, perché l'indice cambia a ogni scorrimento della finestra e un packager che rinumera farebbe risultare nuova tutta la finestra.
+- **Deep check su una rendition sola** (HL-14): click destro su un gradino nell'albero → `HLS Lens: Deep Check This Rendition`, che punta segcheck a quell'URL risolto invece che a tutto il master. Il comando esistente ora accetta un URL preimpostato invece di chiederlo sempre.
+- Setting **`hlsLens.watch.intervalSeconds`** (default 0 = target duration della playlist).
+
 ## [0.6.0] - 2026-08-17
 
 Le prime regole che leggono più di un file: il master e le sue rendition insieme. 39 → 47 regole.
@@ -139,6 +150,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.7.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.4.0

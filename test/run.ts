@@ -15,6 +15,7 @@ import { parsePlaylist, looksLikePlaylist, KNOWN_TAG_NAMES } from '../src/core/p
 import { tagSpec, renderTagHover, SPEC_TAGS, completeAt } from '../src/core/spec';
 import { quickFixesFor } from '../src/core/fixes';
 import { analyzeAcross, LoadedRendition } from '../src/core/crosscheck';
+import { diffPlaylists, describeChange, watchIntervalMs } from '../src/core/watch';
 import { analyze, RULES, Finding, Severity } from '../src/core/analyze';
 import { buildLadder, renditionRows, ladderSummary, formatBandwidth, formatResolution } from '../src/core/ladder';
 import { resolveUri, baseOf, isRemote, isPlainHttp, looksLikePlaylistUri } from '../src/core/uri';
@@ -836,6 +837,71 @@ async function main(): Promise<void> {
       [],
       'a normal media playlist is not an I-frame playlist',
     );
+  });
+
+  // ---------------------------------------------------------------- live watch
+  const window = (first: number, count: number, extra: { endlist?: boolean; discontinuityAt?: number } = {}): string => {
+    const out = ['#EXTM3U', '#EXT-X-VERSION:7', '#EXT-X-TARGETDURATION:6', `#EXT-X-MEDIA-SEQUENCE:${first}`];
+    for (let i = 0; i < count; i++) {
+      if (extra.discontinuityAt === first + i) out.push('#EXT-X-DISCONTINUITY');
+      out.push('#EXTINF:6.000,', `seg-${first + i}.ts`);
+    }
+    if (extra.endlist) out.push('#EXT-X-ENDLIST');
+    return out.join('\n');
+  };
+
+  await test('diffPlaylists reports the segments a live window gained and dropped', () => {
+    const before = parsePlaylist(window(100, 3));
+    const after = parsePlaylist(window(101, 3));
+    const change = diffPlaylists(before, after);
+    assert.deepStrictEqual(change.added.map((s) => s.uri), ['seg-103.ts']);
+    assert.strictEqual(change.droppedFromFront, 1);
+    assert.strictEqual(change.mediaSequenceAdvance, 1);
+    assert.strictEqual(change.stalled, false);
+    assert.strictEqual(change.endedNow, false);
+  });
+
+  await test('diffPlaylists calls an unchanged window stalled', () => {
+    const same = window(100, 3);
+    const change = diffPlaylists(parsePlaylist(same), parsePlaylist(same));
+    assert.strictEqual(change.stalled, true, 'a live playlist that did not move is the thing to report');
+    assert.deepStrictEqual(change.added, []);
+    assert.strictEqual(change.droppedFromFront, 0);
+  });
+
+  await test('diffPlaylists sees an EVENT window that only grows', () => {
+    const change = diffPlaylists(parsePlaylist(window(0, 3)), parsePlaylist(window(0, 5)));
+    assert.strictEqual(change.droppedFromFront, 0, 'nothing slid off the front');
+    assert.strictEqual(change.added.length, 2);
+    assert.strictEqual(change.stalled, false);
+  });
+
+  await test('diffPlaylists notices the stream ending and a discontinuity arriving', () => {
+    const ended = diffPlaylists(parsePlaylist(window(100, 3)), parsePlaylist(window(100, 3, { endlist: true })));
+    assert.strictEqual(ended.endedNow, true);
+    assert.strictEqual(ended.stalled, false, 'an ENDLIST is a change, not a stall');
+
+    const broke = diffPlaylists(parsePlaylist(window(100, 3)), parsePlaylist(window(101, 3, { discontinuityAt: 103 })));
+    assert.deepStrictEqual(broke.discontinuities, ['seg-103.ts'], 'the new segment carries a discontinuity');
+  });
+
+  await test('describeChange says what happened in one line', () => {
+    const moved = describeChange(diffPlaylists(parsePlaylist(window(100, 3)), parsePlaylist(window(101, 3))));
+    assert.match(moved, /1 new segment/);
+    assert.match(moved, /seg-103\.ts/);
+
+    const stalled = describeChange(diffPlaylists(parsePlaylist(window(100, 3)), parsePlaylist(window(100, 3))));
+    assert.match(stalled, /did not move|unchanged|stalled/i);
+
+    const ended = describeChange(diffPlaylists(parsePlaylist(window(100, 3)), parsePlaylist(window(100, 3, { endlist: true }))));
+    assert.match(ended, /ENDLIST|ended/i);
+  });
+
+  await test('watchIntervalMs follows the target duration, within sane bounds', () => {
+    assert.strictEqual(watchIntervalMs(parsePlaylist(window(100, 3)), 0), 6000, 'a 6s target duration polls every 6s');
+    assert.strictEqual(watchIntervalMs(parsePlaylist(window(100, 3)), 15), 15000, 'an explicit interval wins');
+    assert.strictEqual(watchIntervalMs(parsePlaylist('#EXTM3U\n'), 0), 6000, 'no target duration falls back to 6s');
+    assert.strictEqual(watchIntervalMs(parsePlaylist('#EXTM3U\n#EXT-X-TARGETDURATION:1\n'), 0), 2000, 'and never hammers the CDN faster than 2s');
   });
 
   // ------------------------------------------------------------- cross-playlist

@@ -2,7 +2,7 @@
   "name": "hls-lens",
   "displayName": "HLS Lens",
   "description": "Read HLS manifests in VS Code: inline diagnostics on m3u8 playlists, the bitrate ladder as a tree, and a deep segment check with segcheck.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "publisher": "allannava95",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -118,6 +118,15 @@
         "icon": "$(git-compare)"
       },
       {
+        "command": "hlsLens.watch",
+        "title": "HLS Lens: Watch Live Playlist (start/stop)",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "hlsLens.deepCheckVariant",
+        "title": "HLS Lens: Deep Check This Rendition"
+      },
+      {
         "command": "hlsLens.showRules",
         "title": "HLS Lens: Show Rule Reference"
       }
@@ -140,9 +149,14 @@
           "group": "navigation@3"
         },
         {
-          "command": "hlsLens.refresh",
+          "command": "hlsLens.watch",
           "when": "view == hlsLens.explorer",
           "group": "navigation@4"
+        },
+        {
+          "command": "hlsLens.refresh",
+          "when": "view == hlsLens.explorer",
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [
@@ -155,6 +169,11 @@
           "command": "hlsLens.copyUri",
           "when": "view == hlsLens.explorer && viewItem =~ /playlist/",
           "group": "inline@2"
+        },
+        {
+          "command": "hlsLens.deepCheckVariant",
+          "when": "view == hlsLens.explorer && viewItem =~ /playlist/",
+          "group": "1_run@1"
         }
       ],
       "editor/title": [
@@ -240,6 +259,11 @@
           "type": "boolean",
           "default": false,
           "description": "Skip TLS verification in the deep check. For lab servers with a self-signed chain only."
+        },
+        "hlsLens.watch.intervalSeconds": {
+          "type": "number",
+          "default": 0,
+          "description": "Seconds between reloads of a watched live playlist. 0 uses the playlist's own EXT-X-TARGETDURATION; the floor is 2 seconds either way."
         }
       }
     }
