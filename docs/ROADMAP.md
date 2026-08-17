@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**11 of 21 items done** · `█████░░░░░` 52%
+**14 of 21 items done** · `██████░░░░` 67%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -16,9 +16,9 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [v0.3.2 — Reproducible gates](#v032--reproducible-gates) | ✅ shipped | 2/2 |
 | [v0.3.3 — Icon generator under test](#v033--icon-generator-under-test) | ✅ shipped | 1/1 |
 | [v0.4.0 — Rules that pay for themselves](#v040--rules-that-pay-for-themselves) | ✅ shipped | 5/5 |
+| [v0.5.0 — Editor](#v050--editor) | ✅ shipped | 3/3 |
 | [Docs and site](#docs-and-site) | ⏳ planned | 0/1 |
 | [Rules that pay for themselves](#rules-that-pay-for-themselves) | ⏳ planned | 0/1 |
-| [Editor](#editor) | ⏳ planned | 0/3 |
 | [More than one file at a time](#more-than-one-file-at-a-time) | ⏳ planned | 0/4 |
 | [Later — DASH](#later--dash) | ⏳ planned | 0/1 |
 
@@ -73,6 +73,16 @@ Six findings a stream engineer would otherwise catch by reading the manifest twi
 - [x] **HL-5 — `media/key-rotation` and `media/key-dropped`**: one live window covered by a single content key (a hint, and only on a playlist with a non-zero media sequence — the first window has nothing to rotate yet), and `METHOD=NONE` after encrypted segments, which leaves the rest of the playlist in the clear. Two behaviours, so two ids: they have different severities and a team pinning one should not lose the other.
 - [x] **HL-6 — `media/iframe-playlist-shape`**: an `EXT-X-I-FRAMES-ONLY` playlist whose segments are whole files instead of `EXT-X-BYTERANGE` ranges, which makes a player download a segment per thumbnail. The other half of the original item — spotting a playlist that *should* declare `EXT-X-I-FRAMES-ONLY` — is not decidable from one file without guessing, so it is deliberately not implemented.
 
+## v0.5.0 — Editor
+
+The spec where the manifest is, instead of in a browser tab.
+
+✅ shipped · 3 of 3 · `██████████`
+
+- [x] **HL-9 — Hover provider**: `src/core/spec.ts` holds every tag of the specification as data — scope, required version, summary, and the attributes with their enumerated values — and `renderTagHover` turns one into markdown. A test asserts that the vocabulary and the parser's set of known tags are the *same* set in both directions, so a tag can never be parsed without being documented or documented without being parsed.
+- [x] **HL-10 — Completion provider**: `completeAt` reads the line up to the cursor and decides whether a tag name, an attribute name or an enumerated value belongs there. It filters tags by the kind of playlist (a media playlist is never offered `EXT-X-STREAM-INF`) and never offers an attribute already on the line.
+- [x] **HL-11 — Quick fixes**: `quickFixesFor` covers `syntax/version-too-low`, `media/missing-endlist` and the two target-duration findings, as line edits the glue turns into a `WorkspaceEdit`. Only the mechanical ones: a fix that needs a judgement call is not offered.
+
 ## Docs and site
 
 ⏳ planned · 0 of 1 · `░░░░░░░░░░`
@@ -86,16 +96,6 @@ Findings a stream engineer would otherwise catch by reading the manifest twice �
 ⏳ planned · 0 of 1 · `░░░░░░░░░░`
 
 - [ ] **HL-3 — `media/bitrate-vs-declared`**: compare `EXT-X-BITRATE` tags, where a packager emits them, with the variant's `BANDWIDTH`. Blocked on reading more than one file: the `BANDWIDTH` to compare against lives in the master, which a single-playlist analysis never sees, so this lands with **HL-7**.
-
-## Editor
-
-The spec where the manifest is, instead of in a browser tab.
-
-⏳ planned · 0 of 3 · `░░░░░░░░░░`
-
-- [ ] **HL-9 — Hover provider**: hovering a tag shows what it means, its required version and the attributes it accepts.
-- [ ] **HL-10 — Completion provider**: tag and attribute names, with the enumerated values (`YES`/`NO`, `VOD`/`EVENT`, `TYPE=`…).
-- [ ] **HL-11 — Quick fixes for the mechanical findings**: bump `EXT-X-VERSION` to what the playlist needs, append a missing `EXT-X-ENDLIST`, raise `EXT-X-TARGETDURATION` to the longest segment.
 
 ## More than one file at a time
 

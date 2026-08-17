@@ -63,6 +63,14 @@ from the declarations alone.
 - [x] **HL-5 — `media/key-rotation` and `media/key-dropped`**: one live window covered by a single content key (a hint, and only on a playlist with a non-zero media sequence — the first window has nothing to rotate yet), and `METHOD=NONE` after encrypted segments, which leaves the rest of the playlist in the clear. Two behaviours, so two ids: they have different severities and a team pinning one should not lose the other.
 - [x] **HL-6 — `media/iframe-playlist-shape`**: an `EXT-X-I-FRAMES-ONLY` playlist whose segments are whole files instead of `EXT-X-BYTERANGE` ranges, which makes a player download a segment per thumbnail. The other half of the original item — spotting a playlist that *should* declare `EXT-X-I-FRAMES-ONLY` — is not decidable from one file without guessing, so it is deliberately not implemented.
 
+## v0.5.0 — Editor
+
+The spec where the manifest is, instead of in a browser tab.
+
+- [x] **HL-9 — Hover provider**: `src/core/spec.ts` holds every tag of the specification as data — scope, required version, summary, and the attributes with their enumerated values — and `renderTagHover` turns one into markdown. A test asserts that the vocabulary and the parser's set of known tags are the *same* set in both directions, so a tag can never be parsed without being documented or documented without being parsed.
+- [x] **HL-10 — Completion provider**: `completeAt` reads the line up to the cursor and decides whether a tag name, an attribute name or an enumerated value belongs there. It filters tags by the kind of playlist (a media playlist is never offered `EXT-X-STREAM-INF`) and never offers an attribute already on the line.
+- [x] **HL-11 — Quick fixes**: `quickFixesFor` covers `syntax/version-too-low`, `media/missing-endlist` and the two target-duration findings, as line edits the glue turns into a `WorkspaceEdit`. Only the mechanical ones: a fix that needs a judgement call is not offered.
+
 ## Docs and site
 
 - [ ] **HL-16 — Documentation site**: GitHub Pages from `docs/`, with the generated rule reference as its reference section and the roadmap as its plan (the sibling lenses already do this).
@@ -73,14 +81,6 @@ Findings a stream engineer would otherwise catch by reading the manifest twice �
 computable from the declarations alone.
 
 - [ ] **HL-3 — `media/bitrate-vs-declared`**: compare `EXT-X-BITRATE` tags, where a packager emits them, with the variant's `BANDWIDTH`. Blocked on reading more than one file: the `BANDWIDTH` to compare against lives in the master, which a single-playlist analysis never sees, so this lands with **HL-7**.
-
-## Editor
-
-The spec where the manifest is, instead of in a browser tab.
-
-- [ ] **HL-9 — Hover provider**: hovering a tag shows what it means, its required version and the attributes it accepts.
-- [ ] **HL-10 — Completion provider**: tag and attribute names, with the enumerated values (`YES`/`NO`, `VOD`/`EVENT`, `TYPE=`…).
-- [ ] **HL-11 — Quick fixes for the mechanical findings**: bump `EXT-X-VERSION` to what the playlist needs, append a missing `EXT-X-ENDLIST`, raise `EXT-X-TARGETDURATION` to the longest segment.
 
 ## More than one file at a time
 

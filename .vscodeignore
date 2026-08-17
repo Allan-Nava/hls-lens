@@ -7,6 +7,9 @@ test/**
 scripts/**
 docs/**
 node_modules/**
+# Derived local artefacts. They are gitignored, but vsce packages untracked files
+# too: without this line a graph built with /graphify ships to every user.
+graphify-out/**
 .test/**
 .build/**
 out/**

@@ -32,6 +32,9 @@ Plus the ladder as a tree, clickable child playlists, and — when you point it 
 - **Open a manifest from a URL.** `HLS Lens: Open Manifest URL…` fetches a playlist into a read-only editor with the diagnostics already on it. Redirects are followed and the *final* URL is what child URIs resolve against, so a CDN redirect does not send you hunting on the wrong host.
 - **Follow the links.** Variant, rendition, segment and `EXT-X-MAP` URIs are document links: on disk they open the file, on a CDN they open where they live.
 - **Deep check with segcheck.** The manifest rules read claims. `HLS Lens: Deep Check Segments` runs `segcheck check --output json` on a URL, so the findings that need the actual bytes — a gap no `EXT-X-DISCONTINUITY` declares, a rung that codes a lower resolution than it promises, a segment whose real duration drifts from its `EXTINF` — land next to them in the Problems panel. Without the binary the extension still does everything else; the deep check is the only feature that needs it.
+- **The spec on hover.** Hovering a tag says what it does, which `EXT-X-VERSION` it needs, where it is legal and every attribute it accepts with its enumerated values — the reference in the editor instead of a browser tab.
+- **Completions that know the tag.** `#` offers the tags that belong in *this* kind of playlist, `,` the attributes the tag accepts and not the ones already on the line, `=` the legal values (`YES`/`NO`, `VOD`/`EVENT`, `AUDIO`/`VIDEO`/`SUBTITLES`/`CLOSED-CAPTIONS`).
+- **Quick fixes for the mechanical findings.** Bump `EXT-X-VERSION` to what the playlist already uses, append a missing `EXT-X-ENDLIST`, raise `EXT-X-TARGETDURATION` to the longest segment. Only those: a fix that needs a judgement call is not offered.
 - **A status bar line** that says what the open manifest is: `4 variants · 360p→1080p · 0.88 Mbps–6.10 Mbps · 3 alternate renditions`.
 
 ## The rules, in one paragraph
@@ -48,8 +51,8 @@ From the Marketplace: search **HLS Lens**. Or build the `.vsix` yourself:
 
 ```bash
 npm install
-npm run package        # → hls-lens-0.4.0.vsix
-code --install-extension hls-lens-0.4.0.vsix
+npm run package        # → hls-lens-0.5.0.vsix
+code --install-extension hls-lens-0.5.0.vsix
 ```
 
 For the deep check, install segcheck (`brew install --cask allan-nava/tap/segcheck`, or a binary from [its releases](https://github.com/Allan-Nava/segcheck/releases)) and point `hlsLens.segcheck.path` at it if it is not on your `PATH`.
@@ -110,7 +113,7 @@ to Open VSX:
 
 ```bash
 # after the changelog entry and the version bump
-git tag -a v0.4.0 -m "Release 0.4.0" && git push origin main --follow-tags
+git tag -a v0.5.0 -m "Release 0.5.0" && git push origin main --follow-tags
 ```
 
 The two store credentials live in the `marketplace` environment, which is also where you can require

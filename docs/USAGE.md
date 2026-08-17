@@ -49,6 +49,22 @@ Two rules have thresholds, because they are the ones that are genuinely site pol
 
 The full catalogue, with the reason each rule matters, is in the [rule reference](RULES.md) — and **HLS Lens: Show Rule Reference** opens the same thing from inside the editor, generated from the extension itself.
 
+## Writing a manifest
+
+Hover a tag for its reference: what it does, the `EXT-X-VERSION` it needs, whether it belongs in a master or a media playlist, and a table of its attributes with the values each one accepts.
+
+Completions follow the same source. Typing `#` offers the tags that are legal in the playlist you are in — a media playlist is never offered `EXT-X-STREAM-INF` — with the required version on each entry. Inside a tag that takes an attribute list, `,` offers the attributes it accepts, minus the ones already on the line, and `=` offers the enumerated values where the attribute has a closed set.
+
+Three findings come with a quick fix (the lightbulb, or `⌘.`):
+
+| Finding | Fix |
+|---|---|
+| `syntax/version-too-low` | Set `EXT-X-VERSION` to what the playlist already uses |
+| `media/missing-endlist` | Append `#EXT-X-ENDLIST` after the last segment |
+| `media/extinf-exceeds-target` · `media/target-duration-overstated` | Set `EXT-X-TARGETDURATION` to the longest segment, rounded up |
+
+Nothing else is offered a fix. A missing `CODECS` string, a badly spaced ladder or a key served over plaintext HTTP all need a decision that an editor command has no business making.
+
 ## Deep check
 
 **HLS Lens: Deep Check Segments (segcheck)** answers the questions a manifest cannot:

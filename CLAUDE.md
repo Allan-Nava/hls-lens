@@ -46,10 +46,12 @@ code test/fixtures/media-live-broken.m3u8   # 6 regole devono accendersi
 - `src/core/analyze.ts` — le 39 regole + `RULES` (il catalogo documentato) + la tabella `VERSION_REQUIREMENTS` tag→versione minima. Ordine dei finding: severità, poi riga.
 - `src/core/ladder.ts` — modello dell'albero (`buildLadder`, `renditionRows`, `ladderSummary`) e formattazione (`formatBandwidth`, `formatResolution`).
 - `src/core/uri.ts` — `resolveUri`/`baseOf`/`isRemote`/`isPlainHttp`/`looksLikePlaylistUri`/`looksLikeFmp4Uri`.
+- `src/core/spec.ts` — la specifica come dato: `SPEC_TAGS` (scope, versione minima, sintesi, attributi con i valori enumerati), `tagSpec`, `renderTagHover` e `completeAt`. Un test incrocia questo elenco con `KNOWN_TAG_NAMES` del parser nei due sensi.
+- `src/core/fixes.ts` — `quickFixesFor`: solo i finding meccanici (versione, ENDLIST, target duration) come edit di riga; la glue li trasforma in `WorkspaceEdit`.
 - `src/core/backlog.ts` — `BACKLOG.md` come dato: `parseBacklog`, `duplicateIds`, `sectionState`, `backlogStats`, `renderRoadmap`, `orphanMilestones` e la mappatura verso le issue (`markerOf`/`idFromBody`/`issueTitle`/`issueBody`). Non c'entra con l'estensione: sta nel core perché è logica, e la logica si testa.
 - `src/core/segcheck.ts` — `buildSegcheckArgs` e il parsing del JSON di segcheck (`worst`, `summary`, `findings[]` con `check`/`target`/`status`/`message`/`hint`), mappato su `Finding`.
 - `src/core/fetch.ts` — fetch su `node:http(s)` con redirect, timeout, cap sul body; restituisce anche l'URL **finale**.
-- `src/extension.ts` — glue: diagnostics (debounce 300ms), `TreeDataProvider`, `DocumentLinkProvider`, `TextDocumentContentProvider` per lo schema `hls-lens:`, status bar, spawn di segcheck.
+- `src/extension.ts` — glue: diagnostics (debounce 300ms), `TreeDataProvider`, `DocumentLinkProvider`, `HoverProvider`, `CompletionItemProvider`, `CodeActionProvider`, `TextDocumentContentProvider` per lo schema `hls-lens:`, status bar, spawn di segcheck.
 - `src/core/png.ts` — l'icona come dato: `drawIcon` (il mark disegnato da primitive, deterministico), `encodePng`/`decodePng` (8-bit RGBA, filtro 0, un IDAT) e `comparePixels`. Sta nel core perché è logica, e la logica si testa.
 - `scripts/gen-docs.ts` → `docs/RULES.md` · `scripts/gen-roadmap.ts` → `docs/ROADMAP.md` · `scripts/backlog-sync.ts` → milestone/issue · `scripts/make-icon.ts` → `media/icon.png` (con `--check`, il gate sui pixel). Tutti bundlati da `esbuild.mjs` (mappa `TOOLS`): sono glue di I/O sopra il core.
 
@@ -66,6 +68,7 @@ code test/fixtures/media-live-broken.m3u8   # 6 regole devono accendersi
 - **`workspaceContains:**/*.m3u8` è l'unico `activationEvent` dichiarato**: `onLanguage:m3u8` lo genera VS Code dal contributo `languages` e dichiararlo a mano è un warning.
 - **`--insecure` di segcheck esiste per i lab self-signed**, non per silenziare un problema di certificati in produzione.
 - **`renderRoadmap` deve restare deterministico**: il gate in CI lo rigenera e fa il diff col file committato, quindi una data, un contatore o qualunque input ambientale nel roadmap fa fallire la build su un run che non ha cambiato niente. Lo stesso vale per `issueBody`: il sync confronta il body renderizzato con quello su GitHub, e qualcosa di variabile lì dentro riscriverebbe tutte le issue a ogni push.
+- **Le diagnostics hanno `source = 'hls-lens'`** (minuscolo, con trattino): il provider dei quick fix filtra su quella stringa, e scriverla diversamente fa sparire i fix senza nessun errore.
 - **L'icona PNG è generata**: non sostituirla con un binario opaco, si rigenera con `npm run icon` (`src/core/png.ts`: encoder PNG su `zlib`, supersampling 4x per l'antialiasing). **Il gate confronta i pixel, non i byte** (`npm run icon:check`): l'output DEFLATE non è fissato dal formato, quindi lo zlib del runner Linux ricomprime la stessa immagine in byte diversi da quelli scritti su macOS — un `git diff` sul PNG rigenerato faceva fallire la CI a ogni run senza che fosse cambiato niente. Vale per qualunque altro artefatto binario generato che venisse aggiunto.
 
 ## Puntatori

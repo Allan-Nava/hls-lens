@@ -11,7 +11,9 @@ import * as path from 'path';
 import { AddressInfo } from 'net';
 
 import { parseAttributeList, attrInt, attrFloat, attrResolution, attrList, attrBool } from '../src/core/attrs';
-import { parsePlaylist, looksLikePlaylist } from '../src/core/playlist';
+import { parsePlaylist, looksLikePlaylist, KNOWN_TAG_NAMES } from '../src/core/playlist';
+import { tagSpec, renderTagHover, SPEC_TAGS, completeAt } from '../src/core/spec';
+import { quickFixesFor } from '../src/core/fixes';
 import { analyze, RULES, Finding, Severity } from '../src/core/analyze';
 import { buildLadder, renditionRows, ladderSummary, formatBandwidth, formatResolution } from '../src/core/ladder';
 import { resolveUri, baseOf, isRemote, isPlainHttp, looksLikePlaylistUri } from '../src/core/uri';
@@ -833,6 +835,117 @@ async function main(): Promise<void> {
       [],
       'a normal media playlist is not an I-frame playlist',
     );
+  });
+
+  // ------------------------------------------------------------------ spec docs
+  await test('tagSpec describes a tag, its version and where it belongs', () => {
+    const target = tagSpec('EXT-X-TARGETDURATION');
+    assert.ok(target, 'a tag every media playlist has is described');
+    assert.strictEqual(target!.since, 1);
+    assert.strictEqual(target!.scope, 'media');
+    assert.ok(target!.summary.length > 20, 'the summary says something, not just the tag name');
+
+    const map = tagSpec('EXT-X-MAP');
+    assert.strictEqual(map!.since, 5);
+    assert.ok(map!.attributes.some((a) => a.name === 'URI' && a.required));
+    assert.ok(map!.attributes.some((a) => a.name === 'BYTERANGE'));
+
+    const media = tagSpec('EXT-X-MEDIA')!;
+    const type = media.attributes.find((a) => a.name === 'TYPE')!;
+    assert.deepStrictEqual(type.values, ['AUDIO', 'VIDEO', 'SUBTITLES', 'CLOSED-CAPTIONS']);
+
+    assert.strictEqual(tagSpec('EXT-X-TARGETDURATON'), undefined, 'a typo has no spec');
+    assert.strictEqual(tagSpec('#EXT-X-VERSION'), tagSpec('EXT-X-VERSION'), 'the leading # is optional');
+  });
+
+  await test('every tag the parser knows is documented, and every documented tag is known', () => {
+    // The hover is only useful if it covers what the parser recognises; a tag in one
+    // list and not the other is how a hover silently goes missing.
+    const documented = new Set(SPEC_TAGS.map((t) => t.name));
+    const parsed = parsePlaylist('#EXTM3U\n');
+    assert.ok(parsed.startsWithExtM3U);
+    for (const name of KNOWN_TAG_NAMES) {
+      assert.ok(documented.has(name), `${name} has a spec entry`);
+    }
+    for (const spec of SPEC_TAGS) {
+      assert.ok(KNOWN_TAG_NAMES.includes(spec.name), `${spec.name} is a tag the parser knows`);
+      assert.ok(spec.summary.trim().length > 0, `${spec.name} has a summary`);
+    }
+  });
+
+  await test('renderTagHover reads like the spec, in markdown', () => {
+    const md = renderTagHover('EXT-X-KEY')!;
+    assert.match(md, /EXT-X-KEY/);
+    assert.match(md, /version 1|since/i, 'the required version is in there');
+    assert.match(md, /METHOD/, 'the attributes are listed');
+    assert.match(md, /AES-128/, 'with their enumerated values');
+    assert.strictEqual(renderTagHover('EXT-X-NOPE'), undefined);
+  });
+
+  // ---------------------------------------------------------------- completions
+  await test('completeAt offers tags at the start of a line', () => {
+    const at = completeAt('#EXT-X-T', 8, 'media');
+    assert.strictEqual(at.kind, 'tag');
+    assert.ok(at.items.includes('EXT-X-TARGETDURATION'));
+    assert.ok(!at.items.includes('EXT-X-STREAM-INF'), 'a media playlist is not offered master tags');
+    assert.ok(
+      completeAt('#', 1, 'master').items.includes('EXT-X-STREAM-INF'),
+      'and a master playlist is offered its own',
+    );
+  });
+
+  await test('completeAt offers attributes inside a tag that takes them', () => {
+    const line = '#EXT-X-MEDIA:TYPE=AUDIO,';
+    const at = completeAt(line, line.length, 'master');
+    assert.strictEqual(at.kind, 'attribute');
+    assert.ok(at.items.includes('GROUP-ID'));
+    assert.ok(!at.items.includes('TYPE'), 'an attribute already on the line is not offered twice');
+  });
+
+  await test('completeAt offers the enumerated values after an =', () => {
+    const line = '#EXT-X-MEDIA:TYPE=';
+    const at = completeAt(line, line.length, 'master');
+    assert.strictEqual(at.kind, 'value');
+    assert.deepStrictEqual(at.items, ['AUDIO', 'VIDEO', 'SUBTITLES', 'CLOSED-CAPTIONS']);
+    assert.deepStrictEqual(completeAt('#EXT-X-MEDIA:DEFAULT=', 21, 'master').items, ['YES', 'NO']);
+    assert.deepStrictEqual(completeAt('#EXT-X-MEDIA:NAME=', 18, 'master').items, [], 'a free-text attribute has no list');
+  });
+
+  await test('completeAt keeps quiet where a completion would be noise', () => {
+    assert.deepStrictEqual(completeAt('segment-00042.ts', 16, 'media').items, [], 'a URI line is not a tag');
+    assert.strictEqual(completeAt('#EXT-X-ENDLIST', 14, 'media').kind, 'tag');
+    assert.deepStrictEqual(completeAt('#EXT-X-TARGETDURATION:', 22, 'media').items, [], 'a value-only tag has no attribute list');
+  });
+
+  // ----------------------------------------------------------------- quick fixes
+  await test('quickFixesFor bumps EXT-X-VERSION to what the playlist needs', () => {
+    const pl = parsePlaylist('#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXT-X-MAP:URI="init.mp4"\n#EXTINF:6.000,\na.m4s\n#EXT-X-ENDLIST\n');
+    const finding = analyze(pl).find((f) => f.rule === 'syntax/version-too-low')!;
+    assert.ok(finding, 'the fixture needs the fix');
+    const [fix] = quickFixesFor(pl, finding);
+    assert.ok(fix, 'the rule has a fix');
+    assert.match(fix.title, /EXT-X-VERSION/);
+    assert.deepStrictEqual(fix.edit, { kind: 'replace', line: 1, text: '#EXT-X-VERSION:6' });
+  });
+
+  await test('quickFixesFor appends a missing EXT-X-ENDLIST at the end', () => {
+    const pl = parsePlaylist('#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:6.000,\na.ts\n');
+    const finding = analyze(pl).find((f) => f.rule === 'media/missing-endlist')!;
+    const [fix] = quickFixesFor(pl, finding);
+    assert.deepStrictEqual(fix.edit, { kind: 'insertAfter', line: 4, text: '#EXT-X-ENDLIST' });
+  });
+
+  await test('quickFixesFor raises EXT-X-TARGETDURATION to the longest segment', () => {
+    const pl = parsePlaylist('#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:8.500,\na.ts\n#EXT-X-ENDLIST\n');
+    const finding = analyze(pl).find((f) => f.rule === 'media/extinf-exceeds-target')!;
+    const [fix] = quickFixesFor(pl, finding);
+    assert.deepStrictEqual(fix.edit, { kind: 'replace', line: 1, text: '#EXT-X-TARGETDURATION:9' });
+  });
+
+  await test('quickFixesFor offers nothing for a finding no edit can settle', () => {
+    const pl = parsePlaylist(fixture('master-broken.m3u8'));
+    const judgement = analyze(pl).find((f) => f.rule === 'master/missing-codecs')!;
+    assert.deepStrictEqual(quickFixesFor(pl, judgement), [], 'only the mechanical findings get a fix');
   });
 
   // ----------------------------------------------------------------------- icon

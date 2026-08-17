@@ -128,7 +128,8 @@ export interface Playlist {
  * understand, so a misspelled TARGETDURATION reads as "no target duration at all"
  * and nothing complains.
  */
-const KNOWN_TAGS = new Set([
+/** Every tag the parser recognises. Exported so the spec reference can be checked against it. */
+export const KNOWN_TAG_NAMES: string[] = [
   'EXTM3U',
   'EXTINF',
   'EXT-X-VERSION',
@@ -163,7 +164,9 @@ const KNOWN_TAGS = new Set([
   'EXT-X-DEFINE',
   'EXT-X-CONTENT-STEERING',
   'EXT-X-ALLOW-CACHE',
-]);
+];
+
+const KNOWN_TAGS = new Set(KNOWN_TAG_NAMES);
 
 /** Tags whose value is an attribute list rather than a scalar. */
 const ATTRIBUTE_TAGS = new Set([

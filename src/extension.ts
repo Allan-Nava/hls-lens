@@ -11,6 +11,8 @@ import { buildLadder, LadderRow, ladderSummary, renditionRows } from './core/lad
 import { parsePlaylist, Playlist, looksLikePlaylist } from './core/playlist';
 import { buildSegcheckArgs, parseSegcheckResult, segcheckSummary, segcheckToFindings } from './core/segcheck';
 import { fetchText } from './core/fetch';
+import { completeAt, renderTagHover, tagSpec } from './core/spec';
+import { quickFixesFor } from './core/fixes';
 import { isRemote, looksLikePlaylistUri, resolveUri } from './core/uri';
 
 /** Scheme of the read-only documents holding manifests fetched from a URL. */
@@ -42,6 +44,13 @@ export function activate(context: vscode.ExtensionContext): void {
       provideTextDocumentContent: (uri) => fetched.get(uri.toString()) ?? '',
     }),
     vscode.languages.registerDocumentLinkProvider({ language: 'm3u8' }, new PlaylistLinkProvider()),
+    vscode.languages.registerHoverProvider({ language: 'm3u8' }, new TagHoverProvider()),
+    // '#' opens the tag list, ':' and ',' the attributes, '=' the enumerated values:
+    // the three characters after which the spec has something specific to offer.
+    vscode.languages.registerCompletionItemProvider({ language: 'm3u8' }, new TagCompletionProvider(), '#', ':', ',', '='),
+    vscode.languages.registerCodeActionsProvider({ language: 'm3u8' }, new PlaylistFixProvider(), {
+      providedCodeActionKinds: [vscode.CodeActionKind.QuickFix],
+    }),
   );
 
   // Diagnostics and the tree follow whatever manifest is in front of the user.
@@ -564,5 +573,76 @@ class PlaylistLinkProvider implements vscode.DocumentLinkProvider {
     }
     for (const segment of playlist.segments) add(segment.uriLine, segment.uri);
     return links;
+  }
+}
+
+/** Hover: the spec entry for the tag under the cursor. */
+class TagHoverProvider implements vscode.HoverProvider {
+  provideHover(doc: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
+    const line = doc.lineAt(position.line).text;
+    if (!line.startsWith('#')) return undefined;
+    const end = line.indexOf(':');
+    const name = line.slice(1, end < 0 ? undefined : end);
+    // Only over the tag name itself, so hovering a URI or an attribute value is quiet.
+    if (position.character > name.length + 1) return undefined;
+    const markdown = renderTagHover(name);
+    if (!markdown) return undefined;
+    return new vscode.Hover(new vscode.MarkdownString(markdown), new vscode.Range(position.line, 1, position.line, name.length + 1));
+  }
+}
+
+/** Completion: tag names, attribute names, and the enumerated values of an attribute. */
+class TagCompletionProvider implements vscode.CompletionItemProvider {
+  provideCompletionItems(doc: vscode.TextDocument, position: vscode.Position): vscode.CompletionItem[] {
+    const playlist = parsePlaylist(doc.getText());
+    const kind = playlist.kind === 'master' || playlist.kind === 'media' ? playlist.kind : 'unknown';
+    const { kind: what, items } = completeAt(doc.lineAt(position.line).text, position.character, kind);
+    return items.map((label) => {
+      const item = new vscode.CompletionItem(
+        label,
+        what === 'tag' ? vscode.CompletionItemKind.Keyword : what === 'attribute' ? vscode.CompletionItemKind.Property : vscode.CompletionItemKind.EnumMember,
+      );
+      if (what === 'tag') {
+        const spec = tagSpec(label);
+        if (spec) {
+          item.detail = `since version ${spec.since}`;
+          item.documentation = new vscode.MarkdownString(spec.summary);
+        }
+      }
+      return item;
+    });
+  }
+}
+
+/** Code actions: the quick fixes for the findings an edit can settle. */
+class PlaylistFixProvider implements vscode.CodeActionProvider {
+  provideCodeActions(doc: vscode.TextDocument, _range: vscode.Range, context: vscode.CodeActionContext): vscode.CodeAction[] {
+    const playlist = parsePlaylist(doc.getText());
+    const actions: vscode.CodeAction[] = [];
+    for (const diagnostic of context.diagnostics) {
+      // 'hls-lens' is what updateDiagnostics stamps; segcheck findings live in the
+      // other collection and are not fixable from the manifest anyway.
+      if (diagnostic.source !== 'hls-lens' || typeof diagnostic.code !== 'string') continue;
+      const finding: Finding = {
+        rule: diagnostic.code,
+        // The fixes read the rule id and the message; the severity is only here
+        // because a Finding has one.
+        severity: 'warning',
+        line: diagnostic.range.start.line,
+        message: diagnostic.message,
+      };
+      for (const fix of quickFixesFor(playlist, finding)) {
+        const action = new vscode.CodeAction(fix.title, vscode.CodeActionKind.QuickFix);
+        action.diagnostics = [diagnostic];
+        action.edit = new vscode.WorkspaceEdit();
+        if (fix.edit.kind === 'replace') {
+          action.edit.replace(doc.uri, doc.lineAt(fix.edit.line).range, fix.edit.text);
+        } else {
+          action.edit.insert(doc.uri, doc.lineAt(fix.edit.line).range.end, `\n${fix.edit.text}`);
+        }
+        actions.push(action);
+      }
+    }
+    return actions;
   }
 }

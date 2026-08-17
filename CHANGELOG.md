@@ -3,6 +3,21 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.5.0] - 2026-08-17
+
+La specifica dentro l'editor: hover, completion e i quick fix per i finding che una modifica può chiudere da sola.
+
+### Aggiunto
+
+- **Hover sui tag** (HL-9): passando il cursore su un tag esce cosa fa, quale `EXT-X-VERSION` richiede, se è legale in un master o in una media playlist, e la tabella dei suoi attributi con i valori ammessi. La sorgente è **`src/core/spec.ts`**, la specifica come dato: ogni tag con scope, versione, sintesi e attributi. Un test verifica che il vocabolario e l'insieme dei tag noti al parser siano **lo stesso insieme nei due sensi** — un tag non può essere parsato senza essere documentato, né documentato senza essere parsato.
+- **Completion** (HL-10): `completeAt` legge la riga fino al cursore e decide se lì ci va un nome di tag, un nome di attributo o un valore enumerato. Filtra i tag per tipo di playlist (a una media playlist non offre mai `EXT-X-STREAM-INF`) e non ripropone un attributo già presente sulla riga. Trigger su `#`, `:`, `,` e `=`.
+- **Quick fix** (HL-11) per i tre finding meccanici: portare `EXT-X-VERSION` a quello che la playlist già usa, aggiungere l'`EXT-X-ENDLIST` mancante, alzare `EXT-X-TARGETDURATION` al segmento più lungo (arrotondato per eccesso, che è la condizione con cui la regola misura). **Solo quelli**: un `CODECS` mancante, un ladder mal distanziato o una chiave su HTTP richiedono una decisione che un comando dell'editor non deve prendere. Il fix della versione rilegge il numero dal messaggio del finding invece di ricalcolarlo, così non può contraddire la diagnostica che l'utente sta guardando.
+
+### Corretto
+
+- **`graphify-out/` finiva nel `.vsix`**: la directory è gitignorata, ma `vsce` pacchetta anche i file non tracciati, quindi un grafo costruito in locale (850 KB fra `graph.html` e `graph.json`) sarebbe stato spedito a ogni utente — il pacchetto era passato da 11 a 35 file. Ora è in `.vscodeignore`, con il motivo scritto accanto.
+- **I quick fix non sarebbero mai comparsi**: il provider filtrava le diagnostiche su `source === 'HLS Lens'` mentre `updateDiagnostics` le marca `hls-lens`. Trovato prima di committare, confrontando la glue col punto in cui la source viene scritta.
+
 ## [0.4.0] - 2026-08-17
 
 Sei regole nuove (33 → 39), tutte calcolabili dalle sole dichiarazioni del manifest. Scritte in TDD col RED verificato.
@@ -105,6 +120,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.5.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.4.0
 [0.3.3]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.3.3
 [0.3.2]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.3.2
