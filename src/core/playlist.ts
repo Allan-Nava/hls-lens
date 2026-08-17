@@ -62,6 +62,23 @@ export interface Variant {
   iframeOnly: boolean;
 }
 
+/**
+ * One partial segment. A part is published before the segment that contains it
+ * exists, which is the whole point of it — so it is kept on its own rather than
+ * hung off a Segment that may never be written.
+ */
+export interface Part {
+  uri: string;
+  duration: number | null;
+  /** The part starts on an independent frame, so a player may join on it. */
+  independent: boolean;
+  /** The part is missing: the packager published a hole rather than nothing. */
+  gap: boolean;
+  byterange: string | null;
+  /** 0-based line index of the EXT-X-PART tag. */
+  line: number;
+}
+
 /** One alternate rendition declared with EXT-X-MEDIA. */
 export interface Rendition {
   type: string;
@@ -103,7 +120,12 @@ export interface Playlist {
   serverControl: Attrs | null;
   serverControlLine: number | null;
   partTarget: number | null;
-  partCount: number;
+  partInfLine: number | null;
+  parts: Part[];
+  /** EXT-X-PRELOAD-HINT tags, in the order the playlist writes them. */
+  preloadHints: Tag[];
+  /** EXT-X-RENDITION-REPORT tags, in the order the playlist writes them. */
+  renditionReports: Tag[];
 
   segments: Segment[];
   variants: Variant[];
@@ -224,7 +246,10 @@ export function parsePlaylist(text: string): Playlist {
     serverControl: null,
     serverControlLine: null,
     partTarget: null,
-    partCount: 0,
+    partInfLine: null,
+    parts: [],
+    preloadHints: [],
+    renditionReports: [],
     segments: [],
     variants: [],
     renditions: [],
@@ -290,9 +315,16 @@ export function parsePlaylist(text: string): Playlist {
           break;
         case 'EXT-X-PART-INF':
           pl.partTarget = attrFloat(tag.attrs, 'PART-TARGET');
+          pl.partInfLine = i;
           break;
         case 'EXT-X-PART':
-          pl.partCount++;
+          pl.parts.push(readPart(tag));
+          break;
+        case 'EXT-X-PRELOAD-HINT':
+          pl.preloadHints.push(tag);
+          break;
+        case 'EXT-X-RENDITION-REPORT':
+          pl.renditionReports.push(tag);
           break;
         case 'EXT-X-KEY':
         case 'EXT-X-SESSION-KEY':
@@ -414,6 +446,17 @@ function readVariant(tag: Tag, uri: string, uriLine: number, iframeOnly: boolean
     subtitles: tag.attrs.get('SUBTITLES') ?? null,
     closedCaptions: tag.attrs.get('CLOSED-CAPTIONS') ?? null,
     iframeOnly,
+  };
+}
+
+function readPart(tag: Tag): Part {
+  return {
+    uri: tag.attrs.get('URI') ?? '',
+    duration: attrFloat(tag.attrs, 'DURATION'),
+    independent: attrBool(tag.attrs, 'INDEPENDENT'),
+    gap: attrBool(tag.attrs, 'GAP'),
+    byterange: tag.attrs.get('BYTERANGE') ?? null,
+    line: tag.line,
   };
 }
 

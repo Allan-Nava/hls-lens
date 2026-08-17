@@ -2,7 +2,7 @@
   "name": "hls-lens",
   "displayName": "HLS Lens",
   "description": "Read HLS manifests in VS Code: inline diagnostics on m3u8 playlists, the bitrate ladder as a tree, and a deep segment check with segcheck.",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "publisher": "allannava95",
   "license": "MIT",
   "icon": "media/icon.png",

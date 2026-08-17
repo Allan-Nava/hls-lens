@@ -64,6 +64,25 @@ function severityOf(findings: Finding[], rule: string): Severity | undefined {
   return findings.find((f) => f.rule === rule)?.severity;
 }
 
+/**
+ * A low-latency media playlist whose header is correct — the hold-backs clear their
+ * floors and the part target is an eighth of the segment — so a test only has to
+ * write the lines it is actually about.
+ */
+function llPlaylist(...body: string[]): string {
+  return (
+    '#EXTM3U\n#EXT-X-VERSION:9\n#EXT-X-TARGETDURATION:4\n#EXT-X-MEDIA-SEQUENCE:10\n' +
+    '#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,HOLD-BACK=12.000,PART-HOLD-BACK=1.500\n' +
+    '#EXT-X-PART-INF:PART-TARGET=0.500\n#EXT-X-MAP:URI="init.mp4"\n' +
+    `${body.join('\n')}\n`
+  );
+}
+
+/** The findings of one rule, for the assertions that care where it landed. */
+function findingsOf(text: string, rule: string): Finding[] {
+  return analyze(parsePlaylist(text)).filter((f) => f.rule === rule);
+}
+
 async function main(): Promise<void> {
   // ---------------------------------------------------------------- attributes
   await test('parseAttributeList keeps commas inside quoted values', () => {
@@ -343,6 +362,146 @@ async function main(): Promise<void> {
       '#EXTM3U\n#EXT-X-VERSION:9\n#EXT-X-TARGETDURATION:6\n#EXT-X-SERVER-CONTROL:HOLD-BACK=6.000\n' +
       '#EXTINF:6.000,\na.ts\n';
     assert.ok(ruleIds(analyze(parsePlaylist(short))).includes('media/holdback-too-small'));
+  });
+
+  await test('the parser keeps the parts, the preload hints and the rendition reports', () => {
+    const pl = parsePlaylist(
+      llPlaylist(
+        '#EXT-X-PART:DURATION=0.500,URI="s10.0.m4s",INDEPENDENT=YES',
+        '#EXT-X-PART:DURATION=0.500,URI="s10.1.m4s"',
+        '#EXTINF:4.000,',
+        's10.m4s',
+        '#EXT-X-PRELOAD-HINT:TYPE=PART,URI="s11.0.m4s"',
+        '#EXT-X-RENDITION-REPORT:URI="../720p/live.m3u8",LAST-MSN=10,LAST-PART=1',
+      ),
+    );
+    assert.strictEqual(pl.parts.length, 2);
+    assert.strictEqual(pl.parts[0].uri, 's10.0.m4s');
+    assert.strictEqual(pl.parts[0].duration, 0.5);
+    assert.strictEqual(pl.parts[0].independent, true);
+    assert.strictEqual(pl.parts[1].independent, false);
+    // The line index is the part's own tag: a finding about a part has to point at it.
+    assert.ok(pl.lines[pl.parts[1].line].includes('s10.1.m4s'));
+    assert.ok(pl.partInfLine !== null && pl.lines[pl.partInfLine].startsWith('#EXT-X-PART-INF'));
+    assert.strictEqual(pl.preloadHints.length, 1);
+    assert.strictEqual(pl.renditionReports.length, 1);
+  });
+
+  await test('a part longer than PART-TARGET is reported, on its own line', () => {
+    const overlong = llPlaylist(
+      '#EXT-X-PART:DURATION=0.500,URI="s10.0.m4s"',
+      '#EXT-X-PART:DURATION=0.900,URI="s10.1.m4s"',
+      '#EXTINF:4.000,',
+      's10.m4s',
+    );
+    const found = findingsOf(overlong, 'media/part-exceeds-part-target');
+    assert.strictEqual(found.length, 1);
+    assert.ok(parsePlaylist(overlong).lines[found[0].line].includes('s10.1.m4s'));
+
+    // A part exactly at the target is legal, and so is the short last part of a segment.
+    const legal = llPlaylist(
+      '#EXT-X-PART:DURATION=0.500,URI="s10.0.m4s"',
+      '#EXT-X-PART:DURATION=0.100,URI="s10.1.m4s"',
+      '#EXTINF:4.000,',
+      's10.m4s',
+    );
+    assert.strictEqual(findingsOf(legal, 'media/part-exceeds-part-target').length, 0);
+  });
+
+  await test('parts without EXT-X-PART-INF are reported', () => {
+    const noInf =
+      '#EXTM3U\n#EXT-X-VERSION:9\n#EXT-X-TARGETDURATION:4\n' +
+      '#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=1.500\n' +
+      '#EXT-X-PART:DURATION=0.500,URI="s10.0.m4s"\n#EXTINF:4.000,\ns10.m4s\n';
+    assert.ok(ruleIds(analyze(parsePlaylist(noInf))).includes('media/part-without-part-inf'));
+
+    const withInf = llPlaylist('#EXT-X-PART:DURATION=0.500,URI="s10.0.m4s"', '#EXTINF:4.000,', 's10.m4s');
+    assert.ok(!ruleIds(analyze(parsePlaylist(withInf))).includes('media/part-without-part-inf'));
+  });
+
+  await test('a part target as long as the segments is reported', () => {
+    const whole =
+      '#EXTM3U\n#EXT-X-VERSION:9\n#EXT-X-TARGETDURATION:4\n' +
+      '#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,PART-HOLD-BACK=12.000\n' +
+      '#EXT-X-PART-INF:PART-TARGET=4.000\n#EXT-X-PART:DURATION=4.000,URI="s10.0.m4s"\n#EXTINF:4.000,\ns10.m4s\n';
+    assert.ok(ruleIds(analyze(parsePlaylist(whole))).includes('media/part-target-too-large'));
+
+    const eighth = llPlaylist('#EXT-X-PART:DURATION=0.500,URI="s10.0.m4s"', '#EXTINF:4.000,', 's10.m4s');
+    assert.ok(!ruleIds(analyze(parsePlaylist(eighth))).includes('media/part-target-too-large'));
+  });
+
+  await test('a skip boundary under six target durations is reported', () => {
+    const header = (canSkipUntil: string): string =>
+      '#EXTM3U\n#EXT-X-VERSION:9\n#EXT-X-TARGETDURATION:4\n' +
+      `#EXT-X-SERVER-CONTROL:CAN-BLOCK-RELOAD=YES,HOLD-BACK=12.000,CAN-SKIP-UNTIL=${canSkipUntil}\n` +
+      '#EXTINF:4.000,\ns10.m4s\n';
+    assert.ok(ruleIds(analyze(parsePlaylist(header('12.000')))).includes('media/can-skip-until-too-small'));
+    assert.ok(!ruleIds(analyze(parsePlaylist(header('24.000')))).includes('media/can-skip-until-too-small'));
+  });
+
+  await test('preload hints are checked for shape and for usefulness', () => {
+    const segment = ['#EXT-X-PART:DURATION=0.500,URI="s10.0.m4s"', '#EXTINF:4.000,', 's10.m4s'];
+
+    // The spec allows one hint per TYPE; two is a player guessing which to fetch.
+    const twice = llPlaylist(...segment, '#EXT-X-PRELOAD-HINT:TYPE=PART,URI="s11.0.m4s"', '#EXT-X-PRELOAD-HINT:TYPE=PART,URI="s11.1.m4s"');
+    assert.ok(ruleIds(analyze(parsePlaylist(twice))).includes('media/preload-hint'));
+
+    const noUri = llPlaylist(...segment, '#EXT-X-PRELOAD-HINT:TYPE=PART');
+    assert.ok(ruleIds(analyze(parsePlaylist(noUri))).includes('media/preload-hint'));
+
+    // Hinting a part the playlist already publishes is a wasted request, not a preload.
+    const published = llPlaylist(...segment, '#EXT-X-PRELOAD-HINT:TYPE=PART,URI="s10.0.m4s"');
+    assert.ok(ruleIds(analyze(parsePlaylist(published))).includes('media/preload-hint-not-preloading'));
+
+    const noParts =
+      '#EXTM3U\n#EXT-X-VERSION:9\n#EXT-X-TARGETDURATION:4\n#EXT-X-PRELOAD-HINT:TYPE=PART,URI="s11.0.m4s"\n#EXTINF:4.000,\ns10.m4s\n';
+    assert.ok(ruleIds(analyze(parsePlaylist(noParts))).includes('media/preload-hint-not-preloading'));
+
+    const good = llPlaylist(...segment, '#EXT-X-PRELOAD-HINT:TYPE=PART,URI="s11.0.m4s"', '#EXT-X-RENDITION-REPORT:URI="../720p/live.m3u8",LAST-MSN=10');
+    const ids = ruleIds(analyze(parsePlaylist(good)));
+    assert.ok(!ids.includes('media/preload-hint'), `got ${JSON.stringify(ids)}`);
+    assert.ok(!ids.includes('media/preload-hint-not-preloading'));
+  });
+
+  await test('rendition reports are checked against the playlist that carries them', () => {
+    const segment = ['#EXT-X-PART:DURATION=0.500,URI="s10.0.m4s"', '#EXTINF:4.000,', 's10.m4s'];
+    const hint = '#EXT-X-PRELOAD-HINT:TYPE=PART,URI="s11.0.m4s"';
+
+    const noMsn = llPlaylist(...segment, hint, '#EXT-X-RENDITION-REPORT:URI="../720p/live.m3u8"');
+    assert.ok(ruleIds(analyze(parsePlaylist(noMsn))).includes('media/rendition-report'));
+
+    const noUri = llPlaylist(...segment, hint, '#EXT-X-RENDITION-REPORT:LAST-MSN=10');
+    assert.ok(ruleIds(analyze(parsePlaylist(noUri))).includes('media/rendition-report'));
+
+    // This playlist's own last media sequence is 10: a report six segments behind
+    // means the two rungs are not keeping up with each other.
+    const behind = llPlaylist(...segment, hint, '#EXT-X-RENDITION-REPORT:URI="../720p/live.m3u8",LAST-MSN=4');
+    assert.ok(ruleIds(analyze(parsePlaylist(behind))).includes('media/rendition-report-out-of-step'));
+
+    // One segment out is how a live packager normally looks mid-publish.
+    const alongside = llPlaylist(...segment, hint, '#EXT-X-RENDITION-REPORT:URI="../720p/live.m3u8",LAST-MSN=9');
+    assert.ok(!ruleIds(analyze(parsePlaylist(alongside))).includes('media/rendition-report-out-of-step'));
+
+    const none = llPlaylist(...segment, hint);
+    assert.ok(ruleIds(analyze(parsePlaylist(none))).includes('media/rendition-report-missing'));
+    assert.ok(!ruleIds(analyze(parsePlaylist(alongside))).includes('media/rendition-report-missing'));
+
+    // A playlist with no parts is not low latency and owes no report.
+    const plain = '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.000,\ns10.m4s\n';
+    assert.ok(!ruleIds(analyze(parsePlaylist(plain))).includes('media/rendition-report-missing'));
+  });
+
+  await test('the low-latency fixture lights up the five findings it was written for', () => {
+    const ids = ruleIds(analyze(parsePlaylist(fixture('media-ll-broken.m3u8'))));
+    for (const rule of [
+      'media/part-exceeds-part-target',
+      'media/can-skip-until-too-small',
+      'media/preload-hint',
+      'media/preload-hint-not-preloading',
+      'media/rendition-report-out-of-step',
+    ]) {
+      assert.ok(ids.includes(rule), `${rule} missing from ${JSON.stringify(ids)}`);
+    }
   });
 
   await test('gap segments and a short live window are reported', () => {

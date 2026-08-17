@@ -3,13 +3,36 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.10.0] - 2026-08-18
+
+Low latency. 58 → **67 regole**, e il parser che smette di limitarsi a contare le parti.
+
+### Aggiunto
+
+- **`Playlist.parts`**: le `EXT-X-PART` vengono tenute con `URI`, `DURATION`, `INDEPENDENT`, `GAP`, `BYTERANGE` e la **loro riga**, al posto del contatore `partCount`. Stanno per conto loro e non appese al `Segment`: una parte viene pubblicata *prima* del segmento che la contiene, e quel segmento potrebbe non essere mai scritto. Con loro il parser tiene anche `partInfLine`, `preloadHints` e `renditionReports`.
+- **Nove regole `media/*` low latency.** Tutte leggono dichiarazioni, come il resto del catalogo: cosa contengano davvero quei byte resta una domanda per segcheck.
+  - `media/part-without-part-inf` (error): parti senza `EXT-X-PART-INF`. Niente dice quanto dovrebbe durare una parte, e il player tira a indovinare a ogni fetch.
+  - `media/part-exceeds-part-target` (error): una parte più lunga del `PART-TARGET` dichiarato. Il player dimensiona il reload bloccante su quel numero: una parte più lunga arriva dopo che si aspettava già la successiva — uno stallo esattamente al live edge, dove non c'è buffer che lo assorba. Il finding punta alla riga della parte.
+  - `media/part-target-too-large` (warning): `PART-TARGET` pari o superiore al `TARGETDURATION`. La playlist paga tutto il costo della bassa latenza — più richieste, più tag, il reload bloccante — e non ne incassa niente.
+  - `media/can-skip-until-too-small` (warning): `CAN-SKIP-UNTIL` sotto le sei target duration. È una soglia che nessun client conforme può chiedere, quindi i delta che il server si è preso la briga di supportare non li richiede nessuno.
+  - `media/preload-hint` (error): hint senza `TYPE` o `URI`, e un secondo hint dello stesso tipo dove la spec ne ammette uno.
+  - `media/preload-hint-not-preloading` (warning): un hint verso una parte che la playlist **già pubblica** (è una richiesta che il player avrebbe fatto comunque, non un preload) e un `TYPE=PART` in una playlist senza parti.
+  - `media/rendition-report` (error): un report senza `URI` o senza `LAST-MSN` — non basta per switchare.
+  - `media/rendition-report-out-of-step` (warning): un `LAST-MSN` a più di un segmento da dove sta questa playlist. O le rendition non vengono pubblicate in passo, o il report è stantio: in entrambi i casi chi switcha chiede un segmento che non c'è ancora, o ne ripete uno già visto.
+  - `media/rendition-report-missing` (hint): una playlist low latency che non riporta nessuna altra rendition, e costringe chi switcha a scaricarne prima la playlist — il round trip che la bassa latenza esiste per togliere.
+- **`test/fixtures/media-ll-broken.m3u8`**: una live low latency con cinque difetti, per la prova rapida senza Extension Host (`code test/fixtures/media-ll-broken.m3u8`).
+
+### Corretto
+
+- La nota di `0.9.1` diceva che nessuna regola guardava i tag LL-HLS: **era falsa**. `media/part-without-server-control` e `media/holdback-too-small` esistono da `v0.1.0` e coprono entrambi i pavimenti dell'hold-back e il `CAN-BLOCK-RELOAD` mancante. Di `HL-22` restava solo `CAN-SKIP-UNTIL`, ed è quello che è stato scritto.
+
 ## [0.9.1] - 2026-08-17
 
 Nessun codice: la milestone successiva, aperta dove le milestone si aprono.
 
 ### Modificato
 
-- **Nuova sezione `## Low latency` nel `BACKLOG.md`** — quindi una nuova milestone su GitHub e quattro issue (`HL-21`…`HL-24`), create dal sync e non a mano. I tag LL-HLS (`EXT-X-PART`, `EXT-X-PART-INF`, `EXT-X-SERVER-CONTROL`, `EXT-X-PRELOAD-HINT`, `EXT-X-RENDITION-REPORT`) il parser li legge già e `src/core/spec.ts` li documenta già nell'hover: **nessuna regola ne guarda uno**. Un manifest può dichiarare parti che nessun player riuscirà a usare e l'estensione tace.
+- **Nuova sezione `## Low latency` nel `BACKLOG.md`** — quindi una nuova milestone su GitHub e quattro issue (`HL-21`…`HL-24`), create dal sync e non a mano. Del vocabolario LL-HLS il parser legge tutto e `src/core/spec.ts` lo documenta tutto nell'hover, ma le regole ne coprono solo un angolo: `media/part-without-server-control` e `media/holdback-too-small` guardano `EXT-X-SERVER-CONTROL`, e **nessuna regola guarda una singola `EXT-X-PART`, un `EXT-X-PRELOAD-HINT` o un `EXT-X-RENDITION-REPORT`**. Il parser le parti le conta soltanto: una playlist può dichiarare parti più lunghe del proprio `PART-TARGET`, o senza `EXT-X-PART-INF`, e l'estensione tace.
 - La sezione tematica `## Rules that pay for themselves`, svuotata quando le sue voci sono passate a `v0.4.0`, resta nel file ma **non esiste più per gli strumenti**: `parseBacklog` scarta le sezioni senza voci, quindi non è nel roadmap e il sync la elenca già fra le nove milestone orfane da cancellare a mano. Toglierla dal file non cambierebbe niente di quello che il sync vede.
 
 ## [0.9.0] - 2026-08-17

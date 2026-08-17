@@ -10,7 +10,7 @@
 // for, hint → advisory, from the Apple HLS authoring specification rather than
 // from RFC 8216.
 import { Playlist, Segment, Variant, Tag } from './playlist';
-import { attrFloat } from './attrs';
+import { attrFloat, attrInt } from './attrs';
 import { isPlainHttp, looksLikeFmp4Uri } from './uri';
 
 /** Consecutive rungs closer than this are indistinguishable to ABR. */
@@ -19,6 +19,12 @@ const LADDER_MIN_RATIO = 1.5;
 const LADDER_MAX_RATIO = 2.5;
 /** A DURATION may disagree with END-DATE minus START-DATE by this much. */
 const DATERANGE_TOLERANCE_S = 1;
+/** A part may exceed PART-TARGET by this much before it is worth a finding. */
+const PART_TARGET_TOLERANCE_S = 0.001;
+/** CAN-SKIP-UNTIL has a floor of this many target durations. */
+const SKIP_BOUNDARY_TARGETS = 6;
+/** How many segments a rendition report may be away from the playlist carrying it. */
+const RENDITION_REPORT_SLACK = 1;
 
 /**
  * H.264 levels: the frame size in macroblocks and the macroblock rate each one
@@ -359,6 +365,78 @@ export const RULES: RuleDoc[] = [
       'The spec sets the floor at three target durations (three part durations for PART-HOLD-BACK). Below it a player starts too close to the live edge and rebuffers on the first hiccup.',
   },
   {
+    id: 'media/part-without-part-inf',
+    severity: 'error',
+    scope: 'media',
+    title: 'A playlist that publishes parts declares EXT-X-PART-INF',
+    rationale:
+      'PART-TARGET is how a player sizes its part requests and its blocking reload. Parts with no target at all leave it guessing on every fetch, which is the opposite of the predictability low latency depends on.',
+  },
+  {
+    id: 'media/part-exceeds-part-target',
+    severity: 'error',
+    scope: 'media',
+    title: 'No part is longer than PART-TARGET',
+    rationale:
+      'A player sizes its blocking reload on PART-TARGET. A part longer than the target arrives after the player expected the next one, which is a stall exactly at the live edge — where there is no buffer to absorb it.',
+  },
+  {
+    id: 'media/part-target-too-large',
+    severity: 'warning',
+    scope: 'media',
+    title: 'A part is a fraction of a segment',
+    rationale:
+      'PART-TARGET at or above TARGETDURATION means a part is as long as a segment: the playlist pays the full cost of low latency — more requests, more tags, a blocking reload — and delivers none of the latency it exists for.',
+  },
+  {
+    id: 'media/can-skip-until-too-small',
+    severity: 'warning',
+    scope: 'media',
+    title: 'CAN-SKIP-UNTIL leaves six target durations',
+    rationale:
+      'The spec puts the floor at six target durations. A boundary below it is one no conforming client is allowed to ask for, so the playlist deltas the server went to the trouble of supporting are never requested.',
+  },
+  {
+    id: 'media/preload-hint',
+    severity: 'error',
+    scope: 'media',
+    title: 'Preload hints are well formed and unique per type',
+    rationale:
+      'A hint is a request the player makes before the resource exists, and it can only make one per type: a hint with no URI has nothing to request, and two hints of the same type leave the player to guess which one the server will answer.',
+  },
+  {
+    id: 'media/preload-hint-not-preloading',
+    severity: 'warning',
+    scope: 'media',
+    title: 'The preload hint points at what does not exist yet',
+    rationale:
+      'A hint for a part the playlist already lists is a request the player would have made anyway, and a TYPE=PART hint in a playlist with no parts continues nothing. Both look like low latency in the manifest and cost a round trip in the player.',
+  },
+  {
+    id: 'media/rendition-report',
+    severity: 'error',
+    scope: 'media',
+    title: 'Rendition reports name a rendition and a position',
+    rationale:
+      'URI and LAST-MSN are what a report is: which rendition, and how far along. Without both a switching player cannot use it and falls back to fetching the other playlist — the round trip the report exists to save.',
+  },
+  {
+    id: 'media/rendition-report-out-of-step',
+    severity: 'warning',
+    scope: 'media',
+    title: 'Rendition reports are level with the playlist that carries them',
+    rationale:
+      'A report several segments behind this playlist means the rungs are not being published in step, or the report is stale. A player that switches on it asks for a segment that is not there yet, or restarts from one it has already played.',
+  },
+  {
+    id: 'media/rendition-report-missing',
+    severity: 'hint',
+    scope: 'media',
+    title: 'A low-latency playlist reports the other renditions',
+    rationale:
+      'Without a rendition report, a player switching rungs has to fetch the other playlist before it can request anything from it. That round trip at the live edge is exactly what the low-latency tags were added to remove.',
+  },
+  {
     id: 'media/gap-segments',
     severity: 'warning',
     scope: 'media',
@@ -597,7 +675,7 @@ const VERSION_REQUIREMENTS: Array<{ version: number; feature: string; used: (pl:
   {
     version: 9,
     feature: 'low-latency partial segments',
-    used: (pl) => pl.partCount > 0 || pl.partTarget !== null || pl.tags.some((t) => t.name === 'EXT-X-SKIP' || t.name === 'EXT-X-PRELOAD-HINT'),
+    used: (pl) => pl.parts.length > 0 || pl.partTarget !== null || pl.tags.some((t) => t.name === 'EXT-X-SKIP' || t.name === 'EXT-X-PRELOAD-HINT'),
   },
 ];
 
@@ -889,7 +967,7 @@ function checkMedia(pl: Playlist, add: Add, pdtToleranceMs: number, slack: numbe
     add('media/missing-uri', tag.line, 'this EXTINF is not followed by a segment URI', 'put the segment URI on the next line');
   }
 
-  if (pl.partCount > 0 || pl.partTarget !== null) {
+  if (pl.parts.length > 0 || pl.partTarget !== null) {
     const sc = pl.serverControl;
     const canBlock = (sc?.get('CAN-BLOCK-RELOAD') ?? '').toUpperCase() === 'YES';
     const partHoldBack = sc ? attrFloat(sc, 'PART-HOLD-BACK') : null;
@@ -924,6 +1002,8 @@ function checkMedia(pl: Playlist, add: Add, pdtToleranceMs: number, slack: numbe
     }
   }
 
+  checkLowLatency(pl, add);
+
   const gap = pl.segments.find((s) => s.gap);
   if (gap) {
     const count = pl.segments.filter((s) => s.gap).length;
@@ -936,6 +1016,143 @@ function checkMedia(pl: Playlist, add: Add, pdtToleranceMs: number, slack: numbe
       0,
       `the live window is ${pl.totalDuration}s, under the three target durations (${3 * pl.targetDuration}s) a player needs to join reliably`,
       'keep at least three target durations of segments in the playlist',
+    );
+  }
+}
+
+/**
+ * The low-latency half of a media playlist: the partial segments, the preload hint
+ * and the rendition reports.
+ *
+ * All of it is about a player that has to act on the playlist *before* the media
+ * exists — so a declaration that does not hold costs a request that cannot be
+ * cancelled, or a switch that lands nowhere. Whether the part is really 500ms of
+ * video is segcheck's question, not this one's.
+ */
+function checkLowLatency(pl: Playlist, add: Add): void {
+  const lowLatency = pl.parts.length > 0 || pl.partTarget !== null;
+
+  if (pl.parts.length > 0 && pl.partTarget === null) {
+    add(
+      'media/part-without-part-inf',
+      pl.parts[0].line,
+      'the playlist publishes EXT-X-PART with no EXT-X-PART-INF: nothing tells a player how long a part is meant to be',
+      'declare #EXT-X-PART-INF:PART-TARGET=<the part duration>',
+    );
+  }
+
+  if (pl.partTarget !== null) {
+    for (const part of pl.parts) {
+      if (part.duration === null || part.duration <= pl.partTarget + PART_TARGET_TOLERANCE_S) continue;
+      add(
+        'media/part-exceeds-part-target',
+        part.line,
+        `this part is ${part.duration}s, longer than the PART-TARGET of ${pl.partTarget}s the playlist declares`,
+        'shorten the part, or raise PART-TARGET to the longest part the packager emits',
+      );
+    }
+    if (pl.targetDuration !== null && pl.partTarget >= pl.targetDuration) {
+      add(
+        'media/part-target-too-large',
+        pl.partInfLine ?? 0,
+        `PART-TARGET is ${pl.partTarget}s against a target duration of ${pl.targetDuration}s: a part is as long as a segment`,
+        'a part is a fraction of a segment — a target of a quarter to a tenth of the segment is the usual shape',
+      );
+    }
+  }
+
+  if (pl.serverControl && pl.targetDuration !== null) {
+    const canSkip = attrFloat(pl.serverControl, 'CAN-SKIP-UNTIL');
+    const floor = SKIP_BOUNDARY_TARGETS * pl.targetDuration;
+    if (canSkip !== null && canSkip < floor) {
+      add(
+        'media/can-skip-until-too-small',
+        pl.serverControlLine ?? 0,
+        `CAN-SKIP-UNTIL is ${canSkip}s, under the six target durations (${floor}s) the spec requires`,
+        `raise CAN-SKIP-UNTIL to at least ${floor}: a boundary no client may ask for is a delta nothing uses`,
+      );
+    }
+  }
+
+  // What the playlist already publishes: a hint for one of these is a request the
+  // player could have made from the playlist it is holding.
+  const published = new Set<string>();
+  for (const part of pl.parts) if (part.uri) published.add(part.uri);
+  for (const segment of pl.segments) published.add(segment.uri);
+
+  const hintTypes = new Map<string, number>();
+  for (const hint of pl.preloadHints) {
+    const type = (hint.attrs.get('TYPE') ?? '').toUpperCase();
+    const uri = hint.attrs.get('URI') ?? '';
+    if (!type || !uri) {
+      add(
+        'media/preload-hint',
+        hint.line,
+        `this EXT-X-PRELOAD-HINT declares no ${!type ? 'TYPE' : 'URI'}`,
+        'both TYPE and URI are required: without them there is nothing to request',
+      );
+      continue;
+    }
+    const first = hintTypes.get(type);
+    if (first !== undefined) {
+      add(
+        'media/preload-hint',
+        hint.line,
+        `a second EXT-X-PRELOAD-HINT of TYPE=${type}; the first is on line ${first + 1}`,
+        'the spec allows one hint per type — a player cannot know which of two to block on',
+      );
+    } else {
+      hintTypes.set(type, hint.line);
+    }
+
+    if (published.has(uri)) {
+      add(
+        'media/preload-hint-not-preloading',
+        hint.line,
+        `the hint points at "${uri}", which this playlist already publishes`,
+        'hint the resource that does not exist yet: a hint for something published is a request the player would have made anyway',
+      );
+    } else if (type === 'PART' && pl.parts.length === 0) {
+      add(
+        'media/preload-hint-not-preloading',
+        hint.line,
+        'a TYPE=PART hint in a playlist that publishes no EXT-X-PART',
+        'publish the parts, or drop the hint: a player with no parts has nothing to continue from',
+      );
+    }
+  }
+
+  // The last media sequence number this playlist itself holds — what a report about
+  // another rendition is expected to be level with.
+  const lastMsn = pl.mediaSequence !== null && pl.segments.length > 0 ? pl.mediaSequence + pl.segments.length - 1 : null;
+  for (const report of pl.renditionReports) {
+    const uri = report.attrs.get('URI') ?? '';
+    const msn = attrInt(report.attrs, 'LAST-MSN');
+    if (!uri || msn === null) {
+      add(
+        'media/rendition-report',
+        report.line,
+        `this EXT-X-RENDITION-REPORT declares no ${!uri ? 'URI' : 'LAST-MSN'}`,
+        'a report needs both: the rendition it is about, and how far along it is',
+      );
+      continue;
+    }
+    if (lastMsn !== null && Math.abs(msn - lastMsn) > RENDITION_REPORT_SLACK) {
+      add(
+        'media/rendition-report-out-of-step',
+        report.line,
+        `the report for "${uri}" says LAST-MSN=${msn} while this playlist is at ${lastMsn}: ${Math.abs(msn - lastMsn)} segments apart`,
+        'the renditions are not being published in step, or the report is stale — either way a player switching on it lands in the wrong place',
+      );
+    }
+  }
+
+  if (lowLatency && pl.renditionReports.length === 0 && !pl.hasEndList) {
+    add(
+      'media/rendition-report-missing',
+      pl.partInfLine ?? pl.serverControlLine ?? 0,
+      'this low-latency playlist carries no EXT-X-RENDITION-REPORT',
+      'report the other renditions: without it a player that switches has to fetch their playlists first, which is the round trip low latency exists to remove',
     );
   }
 }

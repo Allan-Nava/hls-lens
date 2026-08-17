@@ -38,13 +38,14 @@ npm run package          # .vsix locale (vsce --no-dependencies)
 
 # Prova rapida sulle fixture, senza Extension Host
 code test/fixtures/media-live-broken.m3u8   # 6 regole devono accendersi
+code test/fixtures/media-ll-broken.m3u8     # le 5 regole low latency della fixture
 ```
 
 ## Architettura
 
 - `src/core/attrs.ts` — attribute list di RFC 8216 §4.2 parsate carattere per carattere, più gli accessor tipati (`attrInt`, `attrFloat`, `attrResolution`, `attrList`, `attrBool`).
-- `src/core/playlist.ts` — parser: `Playlist` con `variants`, `renditions`, `segments`, `keys`, `maps`, `serverControl`, gli EXTINF/STREAM-INF orfani e **l'indice di riga di tutto** (0-based). Set dei tag noti (per `syntax/unknown-tag`) e dei tag con attribute list.
-- `src/core/analyze.ts` — le regole su singolo file (39) + le 8 `cross/*` documentate qui e implementate in `crosscheck.ts` + `RULES` (il catalogo documentato) + la tabella `VERSION_REQUIREMENTS` tag→versione minima. Ordine dei finding: severità, poi riga.
+- `src/core/playlist.ts` — parser: `Playlist` con `variants`, `renditions`, `segments`, `keys`, `maps`, `serverControl`, il vocabolario low latency (`parts`, `partTarget`/`partInfLine`, `preloadHints`, `renditionReports`), gli EXTINF/STREAM-INF orfani e **l'indice di riga di tutto** (0-based). Set dei tag noti (per `syntax/unknown-tag`) e dei tag con attribute list. Le `parts` stanno per conto loro e non appese al `Segment`: una parte viene pubblicata *prima* del segmento che la contiene, che potrebbe non essere mai scritto.
+- `src/core/analyze.ts` — le regole su singolo file (48) + le 8 `cross/*` documentate qui e implementate in `crosscheck.ts` + `RULES` (il catalogo documentato) + la tabella `VERSION_REQUIREMENTS` tag→versione minima. Ordine dei finding: severità, poi riga.
 - `src/core/ladder.ts` — modello dell'albero (`buildLadder`, `renditionRows`, `ladderSummary`) e formattazione (`formatBandwidth`, `formatResolution`).
 - `src/core/uri.ts` — `resolveUri`/`baseOf`/`isRemote`/`isPlainHttp`/`looksLikePlaylistUri`/`looksLikeFmp4Uri`.
 - `src/core/crosscheck.ts` — `analyzeAcross`: le regole che servono il master e le sue rendition insieme (versione, target duration, conteggio segmenti, drift delle boundary, discontinuità, finestra live, BANDWIDTH vs EXT-X-BITRATE). I finding si ancorano alla riga dell'`EXT-X-STREAM-INF` nel master, che è il file aperto.
@@ -80,6 +81,6 @@ code test/fixtures/media-live-broken.m3u8   # 6 regole devono accendersi
 ## Puntatori
 
 - Backlog: `BACKLOG.md` · CI: `.github/workflows/ci.yml` · Sync backlog: `.github/workflows/backlog-sync.yml` · Sito: `.github/workflows/pages.yml` · Generati: `docs/RULES.md`, `docs/ROADMAP.md`, `site/` (non committato)
-- Fixture: `test/fixtures/` (`master-clean`, `master-broken`, `media-vod-clean`, `media-live-broken`)
+- Fixture: `test/fixtures/` (`master-clean`, `master-broken`, `media-vod-clean`, `media-live-broken`, `media-ll-broken`, `dash-broken.mpd`)
 - Binario delegato: `~/projects/github.com/segcheck` (contratto JSON in `internal/output/output.go`)
 - Repo gemelli (stesso scaffold): `~/projects/github.com/nats-lens`, `nomad-lens`, `ansible-vars-lens`

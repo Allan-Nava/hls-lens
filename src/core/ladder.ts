@@ -151,7 +151,7 @@ export function ladderSummary(pl: Playlist): string {
     const parts = [`${pl.segments.length} segments`, `${pl.totalDuration.toFixed(1)}s`];
     parts.push(pl.hasEndList || pl.playlistType === 'VOD' ? 'VOD' : 'live');
     if (pl.targetDuration !== null) parts.push(`target ${pl.targetDuration}s`);
-    if (pl.partCount > 0) parts.push(`${pl.partCount} parts`);
+    if (pl.parts.length > 0) parts.push(`${pl.parts.length} parts`);
     return parts.join(' · ');
   }
   return 'not an HLS playlist';

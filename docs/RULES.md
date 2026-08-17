@@ -2,7 +2,7 @@
 
 # Rules
 
-HLS Lens ships 58 rules. Most read one manifest — the claims it makes — and point at the line you have to fix;
+HLS Lens ships 67 rules. Most read one manifest — the claims it makes — and point at the line you have to fix;
 the `cross/*` rules read the master and its renditions together and report on the variant line of the master.
 For the defects that need the segment bytes (a gap that no `EXT-X-DISCONTINUITY` declares, a 1080p rung that codes 720p),
 run the deep check, which brings [segcheck](https://github.com/Allan-Nava/segcheck) findings into the same Problems panel.
@@ -46,6 +46,15 @@ Ids are stable: they are what `hlsLens.diagnostics.skip` pins.
 | [`media/missing-uri`](#mediamissing-uri) | error | Every EXTINF is followed by a segment URI |
 | [`media/part-without-server-control`](#mediapart-without-server-control) | error | Low-latency parts come with the EXT-X-SERVER-CONTROL that makes them usable |
 | [`media/holdback-too-small`](#mediaholdback-too-small) | warning | HOLD-BACK leaves a player three target durations of buffer |
+| [`media/part-without-part-inf`](#mediapart-without-part-inf) | error | A playlist that publishes parts declares EXT-X-PART-INF |
+| [`media/part-exceeds-part-target`](#mediapart-exceeds-part-target) | error | No part is longer than PART-TARGET |
+| [`media/part-target-too-large`](#mediapart-target-too-large) | warning | A part is a fraction of a segment |
+| [`media/can-skip-until-too-small`](#mediacan-skip-until-too-small) | warning | CAN-SKIP-UNTIL leaves six target durations |
+| [`media/preload-hint`](#mediapreload-hint) | error | Preload hints are well formed and unique per type |
+| [`media/preload-hint-not-preloading`](#mediapreload-hint-not-preloading) | warning | The preload hint points at what does not exist yet |
+| [`media/rendition-report`](#mediarendition-report) | error | Rendition reports name a rendition and a position |
+| [`media/rendition-report-out-of-step`](#mediarendition-report-out-of-step) | warning | Rendition reports are level with the playlist that carries them |
+| [`media/rendition-report-missing`](#mediarendition-report-missing) | hint | A low-latency playlist reports the other renditions |
 | [`media/gap-segments`](#mediagap-segments) | warning | The playlist has no EXT-X-GAP segments |
 | [`media/short-live-window`](#mediashort-live-window) | warning | A live playlist holds at least three target durations |
 | [`media/plaintext-segment`](#mediaplaintext-segment) | warning | Segments are addressed over HTTPS |
@@ -276,6 +285,60 @@ EXT-X-PART only reduces latency if the player can block on a playlist reload and
 **HOLD-BACK leaves a player three target durations of buffer** · warning
 
 The spec sets the floor at three target durations (three part durations for PART-HOLD-BACK). Below it a player starts too close to the live edge and rebuffers on the first hiccup.
+
+### `media/part-without-part-inf`
+
+**A playlist that publishes parts declares EXT-X-PART-INF** · error
+
+PART-TARGET is how a player sizes its part requests and its blocking reload. Parts with no target at all leave it guessing on every fetch, which is the opposite of the predictability low latency depends on.
+
+### `media/part-exceeds-part-target`
+
+**No part is longer than PART-TARGET** · error
+
+A player sizes its blocking reload on PART-TARGET. A part longer than the target arrives after the player expected the next one, which is a stall exactly at the live edge — where there is no buffer to absorb it.
+
+### `media/part-target-too-large`
+
+**A part is a fraction of a segment** · warning
+
+PART-TARGET at or above TARGETDURATION means a part is as long as a segment: the playlist pays the full cost of low latency — more requests, more tags, a blocking reload — and delivers none of the latency it exists for.
+
+### `media/can-skip-until-too-small`
+
+**CAN-SKIP-UNTIL leaves six target durations** · warning
+
+The spec puts the floor at six target durations. A boundary below it is one no conforming client is allowed to ask for, so the playlist deltas the server went to the trouble of supporting are never requested.
+
+### `media/preload-hint`
+
+**Preload hints are well formed and unique per type** · error
+
+A hint is a request the player makes before the resource exists, and it can only make one per type: a hint with no URI has nothing to request, and two hints of the same type leave the player to guess which one the server will answer.
+
+### `media/preload-hint-not-preloading`
+
+**The preload hint points at what does not exist yet** · warning
+
+A hint for a part the playlist already lists is a request the player would have made anyway, and a TYPE=PART hint in a playlist with no parts continues nothing. Both look like low latency in the manifest and cost a round trip in the player.
+
+### `media/rendition-report`
+
+**Rendition reports name a rendition and a position** · error
+
+URI and LAST-MSN are what a report is: which rendition, and how far along. Without both a switching player cannot use it and falls back to fetching the other playlist — the round trip the report exists to save.
+
+### `media/rendition-report-out-of-step`
+
+**Rendition reports are level with the playlist that carries them** · warning
+
+A report several segments behind this playlist means the rungs are not being published in step, or the report is stale. A player that switches on it asks for a segment that is not there yet, or restarts from one it has already played.
+
+### `media/rendition-report-missing`
+
+**A low-latency playlist reports the other renditions** · hint
+
+Without a rendition report, a player switching rungs has to fetch the other playlist before it can request anything from it. That round trip at the live edge is exactly what the low-latency tags were added to remove.
 
 ### `media/gap-segments`
 

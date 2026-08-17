@@ -91,17 +91,14 @@ The first rules that need the master and its renditions at once.
 
 - [x] **HL-16 — Documentation site**: `src/core/markdown.ts` renders the subset of markdown these documents use (headings, lists, pipe tables, fenced code, inline spans, links) and wraps each one in a self-contained page — inline CSS, no script, no font to fetch, still no dependencies. `scripts/build-site.ts` turns `docs/` into `site/`, and `pages.yml` deploys it. **`site/` is not committed**: it is rebuilt from the markdown on every deploy, and two of those documents are themselves generated and gated in CI, so a page cannot describe a state the code is not in.
 
-## Low latency
+## v0.10.0 — Low latency
 
-The LL-HLS tags are parsed and documented, and no rule reads a single one of them: a manifest can
-declare partial segments no player will ever manage to use, and the extension says nothing. Every
-item here is still computable from the declarations alone — what a part *contains* stays segcheck's
-job.
+Nine rules on the half of the vocabulary nothing was reading. 58 → 67.
 
-- [ ] **HL-21 — `media/part-target`**: `EXT-X-PART` durations against the `PART-TARGET` of `EXT-X-PART-INF` (rounded, as with `EXTINF` and target duration), parts in a playlist that declares no `EXT-X-PART-INF`, and a `PART-TARGET` above the target duration. The parser counts parts today but does not keep them: they need to be kept with their attributes and their line, like every other tag.
-- [ ] **HL-22 — `media/server-control`**: `PART-HOLD-BACK` under three `PART-TARGET`s and `HOLD-BACK` under three target durations — a player that starts closer to the edge than that stalls on its first reload — parts without `CAN-BLOCK-RELOAD=YES`, which leaves the latency unreachable because the player has to poll, and `CAN-SKIP-UNTIL` under six target durations.
-- [ ] **HL-23 — `media/preload-hint`**: more than one hint of the same `TYPE`, a `TYPE=PART` hint in a playlist that has no parts, and a hint pointing at a part the playlist already lists. A hint for something that exists is a wasted request, not a preload.
-- [ ] **HL-24 — `media/rendition-report`**: a `LAST-MSN` more than one segment away from this playlist's own last media sequence (the rungs are not keeping up with each other), a `LAST-PART` with no `LAST-MSN` to hang it on, and a low-latency playlist carrying no report at all — which makes a switching player fetch the other rendition's playlist first, the round trip low latency exists to avoid.
+- [x] **HL-21 — `media/part-without-part-inf`, `media/part-exceeds-part-target`, `media/part-target-too-large`**: the parser now keeps the parts (`Playlist.parts`, with attributes and line) instead of counting them, and three rules read them — parts with no `EXT-X-PART-INF` to size them, a part longer than the `PART-TARGET` the playlist declares, and a `PART-TARGET` at or above `TARGETDURATION`, which is a part as long as a segment. Three ids rather than the one this item named: they have three severities, and a team that pins one should not lose the others.
+- [x] **HL-22 — `media/can-skip-until-too-small`**: the only part of this item that was not already shipped. `media/part-without-server-control` and `media/holdback-too-small` have covered both hold-back floors and the missing `CAN-BLOCK-RELOAD=YES` since `v0.1.0` — the item claimed otherwise and was wrong. What was left is the `CAN-SKIP-UNTIL` floor of six target durations: a boundary below it is one no conforming client is allowed to ask for, so the playlist deltas are never requested.
+- [x] **HL-23 — `media/preload-hint` and `media/preload-hint-not-preloading`**: a hint with no `TYPE` or `URI` and a second hint of the same type are spec violations (error); a hint for a part the playlist already publishes, or a `TYPE=PART` hint where there are no parts, buys nothing (warning). Split for the same reason as HL-21.
+- [x] **HL-24 — `media/rendition-report`, `media/rendition-report-out-of-step`, `media/rendition-report-missing`**: a report with no `URI` or no `LAST-MSN` is not enough to switch on; a report more than one segment from this playlist's own last media sequence means the rungs are not being published in step; a low-latency playlist with no report at all makes a switching player fetch the other playlist first — the round trip low latency exists to remove.
 
 ## More than one file at a time
 

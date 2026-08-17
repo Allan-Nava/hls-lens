@@ -80,6 +80,31 @@ Nothing else is offered a fix. A missing `CODECS` string, a badly spaced ladder 
 
 Only the playable video rungs are compared. An alternate audio or subtitle rendition is legitimately segmented differently, and reporting that as drift would be a finding that is not one. A rendition that cannot be read is listed in the **HLS Lens** output channel and skipped, so one unreachable rung does not hide the others.
 
+## Low-latency playlists
+
+A low-latency playlist is a promise a player acts on *before* the media exists: it blocks on a
+reload, it requests a part the server has not finished writing, it switches rungs on a report
+instead of on a playlist it fetched. Every one of those is a request that cannot be taken back, so
+a declaration that does not hold costs a stall at the live edge — where there is no buffer left to
+absorb it.
+
+| Rule | What it catches |
+|---|---|
+| `media/part-without-part-inf` | parts with no `EXT-X-PART-INF`: nothing says how long a part is meant to be |
+| `media/part-exceeds-part-target` | a part longer than the `PART-TARGET` the playlist declares |
+| `media/part-target-too-large` | `PART-TARGET` at or above `TARGETDURATION` — a part as long as a segment |
+| `media/part-without-server-control` | parts with no `CAN-BLOCK-RELOAD=YES` and `PART-HOLD-BACK`: bandwidth spent, no latency bought |
+| `media/holdback-too-small` | a hold-back under the three target durations (or three part durations) the spec requires |
+| `media/can-skip-until-too-small` | `CAN-SKIP-UNTIL` under six target durations: a delta no conforming client may ask for |
+| `media/preload-hint` | a hint with no `TYPE` or `URI`, or a second hint of a type that allows one |
+| `media/preload-hint-not-preloading` | a hint for a part the playlist already publishes, or a `TYPE=PART` hint where there are no parts |
+| `media/rendition-report` | a report with no `URI` or no `LAST-MSN`: not enough to switch on |
+| `media/rendition-report-out-of-step` | a report several segments away from where this playlist is |
+| `media/rendition-report-missing` | a low-latency playlist that reports no other rendition at all |
+
+What a part *contains* is not asked here — whether those bytes are really 500ms of video is a
+question about the media, and that is [segcheck](https://github.com/Allan-Nava/segcheck)'s.
+
 ## DASH manifests
 
 Open an `.mpd` and the `dash/*` rules report on it in the same Problems panel, on the line to edit. The same stream is usually packaged both ways from one mezzanine, and the defects are the same ones: a duration that disagrees with the segments, a hole in the timeline, a live manifest with no clock.
