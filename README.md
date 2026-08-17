@@ -48,8 +48,8 @@ From the Marketplace: search **HLS Lens**. Or build the `.vsix` yourself:
 
 ```bash
 npm install
-npm run package        # → hls-lens-0.1.0.vsix
-code --install-extension hls-lens-0.1.0.vsix
+npm run package        # → hls-lens-0.2.0.vsix
+code --install-extension hls-lens-0.2.0.vsix
 ```
 
 For the deep check, install segcheck (`brew install --cask allan-nava/tap/segcheck`, or a binary from [its releases](https://github.com/Allan-Nava/segcheck/releases)) and point `hlsLens.segcheck.path` at it if it is not on your `PATH`.
@@ -97,7 +97,24 @@ npm run watch      # esbuild in watch mode, then F5 for the Extension Host
 npm test           # the core: parser, rules, ladder, URIs, segcheck bridge, fetcher
 npm run typecheck
 npm run docs       # regenerate docs/RULES.md from the catalogue (CI checks this)
+npm run roadmap    # regenerate docs/ROADMAP.md from BACKLOG.md (CI checks this)
 ```
+
+## Roadmap
+
+[BACKLOG.md](BACKLOG.md) is the plan, and the only place work is tracked. Two things are generated
+from it, so none of them can drift:
+
+- **[docs/ROADMAP.md](docs/ROADMAP.md)** — `npm run roadmap`, with CI failing if the committed file
+  is not what the backlog produces.
+- **GitHub milestones and issues** — the [`backlog-sync`](.github/workflows/backlog-sync.yml)
+  workflow runs on every push that touches the backlog and makes the tracker a mirror of the file:
+  a `##` heading is a milestone, an item is an issue labelled `backlog`, `- [x]` closes it. Each
+  issue is anchored to its stable id (`HL-7`) by a marker in the body, so renaming an item retitles
+  its issue instead of opening a second one, and the whole thing is idempotent — it writes only what
+  diverges. `workflow_dispatch` takes a `dry_run` input that reports what it would change.
+
+Editing an issue on GitHub is therefore pointless: the next sync overwrites it. Edit the file.
 
 ## Related
 

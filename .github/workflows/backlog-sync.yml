@@ -1,0 +1,44 @@
+name: Backlog Sync
+
+# Makes GitHub (milestones + issues) a mirror of BACKLOG.md.
+# The file is the single source of truth; see scripts/backlog-sync.ts.
+
+on:
+  push:
+    branches: ["main", "master"]
+    paths:
+      - "BACKLOG.md"
+      - "src/core/backlog.ts"
+      - "scripts/backlog-sync.ts"
+      - ".github/workflows/backlog-sync.yml"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Parse and report, without writing to GitHub"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  issues: write
+
+# Two pushes in a row would otherwise race on creating the same issue twice.
+concurrency:
+  group: backlog-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - name: Sync BACKLOG.md to milestones and issues
+        run: npm run backlog:sync
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run && '1' || '' }}

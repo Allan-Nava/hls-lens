@@ -3,6 +3,23 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.2.0] - 2026-08-17
+
+Il piano di lavoro si mantiene da solo: `BACKLOG.md` è l'unica sorgente, roadmap e issue tracker sono proiezioni generate.
+
+### Aggiunto
+
+- **`src/core/backlog.ts`**: parser di `BACKLOG.md` nel core puro (milestone `##`, aree `###`, item `- [ ] **HL-n — Titolo**: descrizione`), più `renderRoadmap`, `backlogStats`, `progressBar` e la mappatura verso le issue (`markerOf`/`idFromBody`/`issueTitle`/`issueBody`). Test scritti prima dell'implementazione, incluso uno che parsa il `BACKLOG.md` **vero** del repo: un id duplicato o una voce malformata fa fallire `npm test`, non il job di sync.
+- **`docs/ROADMAP.md` generato** (`npm run roadmap`): milestone con stato (shipped / in progress / planned), barra di avanzamento e voci raggruppate per area. Il rendering è **deterministico e senza data**, perché il gate in CI rigenera il file e ne fa il diff: un timestamp lo farebbe fallire a ogni run che non ha cambiato niente.
+- **Workflow `backlog-sync`**: rende milestone e issue di GitHub un mirror di `BACKLOG.md` a ogni push che tocca il backlog (`workflow_dispatch` con input `dry_run` per vedere cosa farebbe). Idempotente: scrive solo ciò che diverge. Ogni issue è ancorata al suo id stabile da un marker nel body (`<!-- backlog:HL-7 -->`), così rinominare una voce ne cambia il titolo invece di aprirne una seconda; un id sparito dal file **non** viene chiuso in automatico, viene segnalato nel log (una chiusura implicita nasconderebbe lavoro cancellato per sbaglio).
+- Script npm `roadmap` e `backlog:sync`, e in `esbuild.mjs` una tabella degli entry point dei tool (`--docs`, `--roadmap`, `--sync`) al posto del flag singolo.
+
+### Modificato
+
+- **`BACKLOG.md` ristrutturato** in milestone per release (`v0.1 — Foundation` … `Later — DASH`) con le checkbox: gli id `HL-n` sono invariati, la struttura ora è il formato che sync e roadmap leggono. **HL-17** chiuso da questa release.
+- **`tsconfig.json` include `scripts/`**: i generatori erano fuori dal typecheck, cioè il codice che produce la documentazione era l'unico non controllato.
+- **CI**: nuovo gate anti-divergenza su `docs/ROADMAP.md`, accanto a quelli di `docs/RULES.md` e dell'icona.
+
 ## [0.1.0] - 2026-08-17
 
 Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice cosa ha di sbagliato.
@@ -27,4 +44,5 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.2.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.1.0

@@ -2,7 +2,18 @@ import * as esbuild from 'esbuild';
 
 const watch = process.argv.includes('--watch');
 const test = process.argv.includes('--test');
-const docs = process.argv.includes('--docs');
+
+/**
+ * Build-time tools. Each one imports the pure core so the artefact it produces cannot
+ * describe a state the code is not in; each is bundled to `.build/<name>.mjs` and run
+ * by an npm script (see package.json) or by a workflow.
+ */
+const TOOLS = {
+  docs: 'scripts/gen-docs.ts',
+  roadmap: 'scripts/gen-roadmap.ts',
+  sync: 'scripts/backlog-sync.ts',
+};
+const tool = Object.keys(TOOLS).find((name) => process.argv.includes(`--${name}`));
 
 /** The CommonJS globals the ESM bundles need back: require() and __dirname. */
 const nodeBanner = [
@@ -34,13 +45,15 @@ if (test) {
     format: 'esm',
     banner: { js: nodeBanner },
   });
-} else if (docs) {
-  // The documentation generator imports the rule catalogue from the same source the
-  // extension ships, so the reference cannot describe rules that do not exist.
+} else if (tool) {
+  // The generators import from the same source the extension ships (the rule catalogue,
+  // the backlog parser), so a reference cannot describe rules that do not exist and the
+  // sync cannot mirror a backlog format the tests do not cover.
+  const entry = TOOLS[tool];
   await esbuild.build({
     ...base,
-    entryPoints: ['scripts/gen-docs.ts'],
-    outfile: '.build/gen-docs.mjs',
+    entryPoints: [entry],
+    outfile: `.build/${entry.replace(/^scripts\//, '').replace(/\.ts$/, '')}.mjs`,
     format: 'esm',
     banner: { js: nodeBanner },
   });

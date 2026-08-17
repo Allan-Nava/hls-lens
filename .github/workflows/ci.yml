@@ -33,6 +33,18 @@ jobs:
             git diff -- docs/RULES.md
             exit 1
           fi
+      # docs/ROADMAP.md is a projection of BACKLOG.md, which the backlog-sync workflow
+      # also mirrors into milestones and issues. Gating the regeneration keeps the three
+      # views of the plan from disagreeing, and fails on a malformed item (a duplicate id,
+      # a heading with no items) before the sync job writes it to the issue tracker.
+      - name: Roadmap is up to date
+        run: |
+          npm run roadmap
+          if ! git diff --quiet -- docs/ROADMAP.md; then
+            echo "::error::docs/ROADMAP.md is stale — run 'npm run roadmap' and commit the result"
+            git diff -- docs/ROADMAP.md
+            exit 1
+          fi
       # The icon is generated too: a hand-edited PNG would silently diverge from
       # the script that is supposed to produce it.
       - name: Icon is up to date

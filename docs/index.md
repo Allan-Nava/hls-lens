@@ -10,6 +10,7 @@ An `.m3u8` file is a list of claims, and a text editor shows you all of them equ
 
 - [Usage](USAGE.md) — commands, the tree, the deep check, settings
 - [Rule reference](RULES.md) — all 33 rules with the reason each one matters
+- [Roadmap](ROADMAP.md) — what is shipped and what is next, generated from the backlog
 - [Source on GitHub](https://github.com/Allan-Nava/hls-lens)
 
 ## In one screenshot's worth of words
