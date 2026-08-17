@@ -12,6 +12,7 @@ const TOOLS = {
   docs: 'scripts/gen-docs.ts',
   roadmap: 'scripts/gen-roadmap.ts',
   sync: 'scripts/backlog-sync.ts',
+  icon: 'scripts/make-icon.ts',
 };
 const tool = Object.keys(TOOLS).find((name) => process.argv.includes(`--${name}`));
 

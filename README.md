@@ -48,8 +48,8 @@ From the Marketplace: search **HLS Lens**. Or build the `.vsix` yourself:
 
 ```bash
 npm install
-npm run package        # → hls-lens-0.3.2.vsix
-code --install-extension hls-lens-0.3.2.vsix
+npm run package        # → hls-lens-0.3.3.vsix
+code --install-extension hls-lens-0.3.3.vsix
 ```
 
 For the deep check, install segcheck (`brew install --cask allan-nava/tap/segcheck`, or a binary from [its releases](https://github.com/Allan-Nava/segcheck/releases)) and point `hlsLens.segcheck.path` at it if it is not on your `PATH`.
@@ -83,7 +83,7 @@ For the deep check, install segcheck (`brew install --cask allan-nava/tap/segche
 
 ## Design notes
 
-- **The logic is a pure core.** `src/core/` never imports `vscode`: the parser, the 33 rules, the ladder model, URI resolution and the segcheck bridge are plain TypeScript with tests. `src/extension.ts` only translates that model into diagnostics, tree items and links.
+- **The logic is a pure core.** `src/core/` never imports `vscode`: the parser, the 33 rules, the ladder model, URI resolution, the segcheck bridge — and even the backlog parser and the icon generator — are plain TypeScript with tests. `src/extension.ts` only translates that model into diagnostics, tree items and links, and the scripts in `scripts/` are I/O over the same core.
 - **Line numbers everywhere, 0-based.** The parser keeps the line index of every tag, URI, `EXTINF` and `PROGRAM-DATE-TIME` it decodes, because a finding that cannot point at a line is just a linter you have to read twice.
 - **Attribute lists are parsed, not split.** `CODECS="avc1.4d401f,mp4a.40.2"` is one value with a comma in it; splitting the line on commas is how a manifest gets reported as codec-less.
 - **No dependencies.** Not one runtime dependency; the fetcher is `node:http(s)` and even the Marketplace icon is generated (`npm run icon`) rather than pulled from a toolchain.
@@ -110,7 +110,7 @@ to Open VSX:
 
 ```bash
 # after the changelog entry and the version bump
-git tag -a v0.3.2 -m "Release 0.3.2" && git push origin main --follow-tags
+git tag -a v0.3.3 -m "Release 0.3.3" && git push origin main --follow-tags
 ```
 
 The two store credentials live in the `marketplace` environment, which is also where you can require

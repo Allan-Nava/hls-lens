@@ -17,6 +17,7 @@ import { buildLadder, renditionRows, ladderSummary, formatBandwidth, formatResol
 import { resolveUri, baseOf, isRemote, isPlainHttp, looksLikePlaylistUri } from '../src/core/uri';
 import { buildSegcheckArgs, parseSegcheckResult, segcheckToFindings, segcheckSummary } from '../src/core/segcheck';
 import { fetchText } from '../src/core/fetch';
+import { drawIcon, encodePng, decodePng, comparePixels } from '../src/core/png';
 import {
   parseBacklog,
   duplicateIds,
@@ -576,6 +577,55 @@ async function main(): Promise<void> {
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
+  });
+
+  // ----------------------------------------------------------------------- icon
+  await test('drawIcon is deterministic and draws the mark it claims', () => {
+    const first = drawIcon();
+    const second = drawIcon();
+    assert.strictEqual(first.size, 128, 'the Marketplace size');
+    assert.strictEqual(first.rgba.length, 128 * 128 * 4, 'RGBA, one byte per channel');
+    assert.ok(Buffer.from(first.rgba).equals(Buffer.from(second.rgba)), 'same pixels every run');
+
+    const at = (x: number, y: number) => Array.from(first.rgba.subarray((y * 128 + x) * 4, (y * 128 + x) * 4 + 4));
+    assert.deepStrictEqual(at(64, 4), [11, 18, 32, 255], 'the #0B1220 background, away from the corner radius');
+    assert.deepStrictEqual(at(0, 0), [0, 0, 0, 0], 'the rounded corner is transparent, not black');
+    // The tallest rung stands at design x=83..97, y=20..104 in a 128px icon.
+    assert.deepStrictEqual(at(90, 95), [16, 185, 129, 255], 'the tallest rung is the full-strength green');
+    assert.deepStrictEqual(at(26, 95), [45, 212, 191, 255], 'the lowest rung is the dimmer teal');
+    assert.deepStrictEqual(at(90, 49), [239, 68, 68, 255], 'the defect mark is red');
+  });
+
+  await test('encodePng and decodePng round-trip the pixels', () => {
+    const { size, rgba } = drawIcon();
+    const png = encodePng(rgba, size, size);
+    assert.ok(png.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])), 'PNG signature');
+    const decoded = decodePng(png);
+    assert.strictEqual(decoded.width, size);
+    assert.strictEqual(decoded.height, size);
+    assert.ok(decoded.rgba.equals(Buffer.from(rgba)), 'what comes back out is what went in');
+  });
+
+  await test('decodePng rejects a file this generator did not write', () => {
+    assert.throws(() => decodePng(Buffer.from('not a png at all')), /not a PNG/i);
+    const { size, rgba } = drawIcon();
+    const truncated = encodePng(rgba, size, size).subarray(0, 20);
+    assert.throws(() => decodePng(truncated), /IHDR|raw size|inflate|IDAT/i);
+  });
+
+  await test('comparePixels finds an altered pixel and ignores the compression', () => {
+    const { size, rgba } = drawIcon();
+    // The same image compressed differently is the CI failure this replaced: a
+    // different zlib emits a different byte stream for identical pixels.
+    const strong = encodePng(rgba, size, size, 9);
+    const weak = encodePng(rgba, size, size, 1);
+    assert.ok(!strong.equals(weak), 'the two encodings really do differ byte for byte');
+    assert.strictEqual(comparePixels(decodePng(weak).rgba, rgba), null, 'but the pixels are the same');
+
+    const altered = Buffer.from(rgba);
+    altered[(64 * size + 64) * 4] ^= 0xff;
+    const diff = comparePixels(decodePng(encodePng(altered, size, size)).rgba, rgba);
+    assert.deepStrictEqual(diff, { differing: 1, firstPixel: 64 * size + 64 });
   });
 
   // ------------------------------------------------------------------- backlog

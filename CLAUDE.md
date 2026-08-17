@@ -11,7 +11,7 @@ Filosofia: le regole leggono le *dichiarazioni* del manifest e puntano alla riga
 - **Un tag `v*` pushato pubblica sugli store** (job `publish` in `ci.yml`: Marketplace + Open VSX, con il `.vsix` esatto allegato alla release). Combinato con la regola "ogni commit = release taggata", significa che ogni push di un tag arriva agli utenti: la versione si bumpa con intenzione, e il `CHANGELOG.md` è la release note. Senza `VSCE_PAT`/`OVSX_PAT` nell'environment `marketplace` il job avvisa e salta, non fallisce.
 - **Gate prima di chiudere**: `npm run typecheck` + `npm test` + `npm run docs` + `npm run roadmap` (gli ultimi due devono essere un no-op) + `npm run icon:check` verdi. Stessi check della CI.
 - **La logica va nel core puro** (`src/core/` — MAI import `vscode` lì) con test in `test/run.ts`; `src/extension.ts` è solo glue UI (non testata).
-- **TDD stretto sul core**: per ogni logica nuova/modificata in `src/core/`, scrivere prima il test e **verificare il RED** *prima* di implementare, poi portarlo a GREEN. La UI glue è esente per scelta.
+- **TDD stretto, sempre**: per ogni logica nuova o modificata, scrivere prima il test e **verificare il RED** *prima* di implementare, poi portarlo a GREEN. Vale anche per i generatori e per il tooling di build: se una cosa è logica, va in `src/core/` (bundlata negli script dalla mappa `TOOLS` di `esbuild.mjs`) e ha un test in `test/run.ts`, e lo script resta glue di I/O. **Solo** la UI glue di `src/extension.ts` è esente, per scelta.
 - **Ogni regola nuova**: entra in `src/core/analyze.ts` con id stabile `categoria/nome`, voce in `RULES` (con `severity`, `title` e un `rationale` che spiega il *rischio*, non ripete il titolo), test nel file dei test, `npm run docs` per rigenerare `docs/RULES.md`, voce nel `CHANGELOG.md`.
 - **Gli id delle regole sono API**: chi mette l'estensione in un team pinna un id in `hlsLens.diagnostics.skip`. Non rinominarli senza una major e una nota nel changelog.
 - **Niente rete nei test**: fixture in `test/fixtures/`, server `http` usa-e-getta su porta random per il fetcher, contratto JSON di segcheck testato **senza** lanciare il binario. Un test che tocca un CDN reale è un bug.
@@ -50,7 +50,8 @@ code test/fixtures/media-live-broken.m3u8   # 6 regole devono accendersi
 - `src/core/segcheck.ts` — `buildSegcheckArgs` e il parsing del JSON di segcheck (`worst`, `summary`, `findings[]` con `check`/`target`/`status`/`message`/`hint`), mappato su `Finding`.
 - `src/core/fetch.ts` — fetch su `node:http(s)` con redirect, timeout, cap sul body; restituisce anche l'URL **finale**.
 - `src/extension.ts` — glue: diagnostics (debounce 300ms), `TreeDataProvider`, `DocumentLinkProvider`, `TextDocumentContentProvider` per lo schema `hls-lens:`, status bar, spawn di segcheck.
-- `scripts/gen-docs.ts` → `docs/RULES.md` · `scripts/gen-roadmap.ts` → `docs/ROADMAP.md` · `scripts/backlog-sync.ts` → milestone/issue · `scripts/make-icon.mjs` → `media/icon.png` (con `--check`, il gate sui pixel).
+- `src/core/png.ts` — l'icona come dato: `drawIcon` (il mark disegnato da primitive, deterministico), `encodePng`/`decodePng` (8-bit RGBA, filtro 0, un IDAT) e `comparePixels`. Sta nel core perché è logica, e la logica si testa.
+- `scripts/gen-docs.ts` → `docs/RULES.md` · `scripts/gen-roadmap.ts` → `docs/ROADMAP.md` · `scripts/backlog-sync.ts` → milestone/issue · `scripts/make-icon.ts` → `media/icon.png` (con `--check`, il gate sui pixel). Tutti bundlati da `esbuild.mjs` (mappa `TOOLS`): sono glue di I/O sopra il core.
 
 ## Trappole note / regole tecniche
 
@@ -65,7 +66,7 @@ code test/fixtures/media-live-broken.m3u8   # 6 regole devono accendersi
 - **`workspaceContains:**/*.m3u8` è l'unico `activationEvent` dichiarato**: `onLanguage:m3u8` lo genera VS Code dal contributo `languages` e dichiararlo a mano è un warning.
 - **`--insecure` di segcheck esiste per i lab self-signed**, non per silenziare un problema di certificati in produzione.
 - **`renderRoadmap` deve restare deterministico**: il gate in CI lo rigenera e fa il diff col file committato, quindi una data, un contatore o qualunque input ambientale nel roadmap fa fallire la build su un run che non ha cambiato niente. Lo stesso vale per `issueBody`: il sync confronta il body renderizzato con quello su GitHub, e qualcosa di variabile lì dentro riscriverebbe tutte le issue a ogni push.
-- **L'icona PNG è generata**: non sostituirla con un binario opaco, si rigenera con `npm run icon` (encoder PNG su `zlib`, supersampling 4x per l'antialiasing). **Il gate confronta i pixel, non i byte** (`npm run icon:check`): l'output DEFLATE non è fissato dal formato, quindi lo zlib del runner Linux ricomprime la stessa immagine in byte diversi da quelli scritti su macOS — un `git diff` sul PNG rigenerato faceva fallire la CI a ogni run senza che fosse cambiato niente. Vale per qualunque altro artefatto binario generato che venisse aggiunto.
+- **L'icona PNG è generata**: non sostituirla con un binario opaco, si rigenera con `npm run icon` (`src/core/png.ts`: encoder PNG su `zlib`, supersampling 4x per l'antialiasing). **Il gate confronta i pixel, non i byte** (`npm run icon:check`): l'output DEFLATE non è fissato dal formato, quindi lo zlib del runner Linux ricomprime la stessa immagine in byte diversi da quelli scritti su macOS — un `git diff` sul PNG rigenerato faceva fallire la CI a ogni run senza che fosse cambiato niente. Vale per qualunque altro artefatto binario generato che venisse aggiunto.
 
 ## Puntatori
 

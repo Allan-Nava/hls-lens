@@ -48,6 +48,10 @@ were gates that assumed something the environment does not guarantee.
 - [x] **HL-18 — Icon gate compares pixels, not bytes**: `npm run icon:check` decodes the committed PNG and compares it with the generator's pixels, replacing the regenerate-and-diff step that failed on every CI run. DEFLATE output is not fixed by the PNG format, so the runner's zlib re-encodes the same image into different bytes and the byte diff reported a stale icon on a machine where nothing had changed.
 - [x] **HL-19 — Report milestones a rename left behind**: `orphanMilestones` in the core, wired into the sync, names the milestones that are empty and no longer in this file (five of them after the section restructure). It reports and never deletes, and it counts issues with the issues endpoint because GitHub does not recompute a milestone's own counters when an issue moves away from it.
 
+## v0.3.3 — Icon generator under test
+
+- [x] **HL-20 — The icon generator moves into the tested core**: `src/core/png.ts` holds `drawIcon`, `encodePng`/`decodePng` and `comparePixels`, with tests that assert the mark's own pixels, the encode/decode round-trip, the rejection of a file the generator did not write, and that two compression levels of the same image compare equal. `scripts/make-icon.ts` is now I/O only, bundled like the other tools. Written test-first: the truncated-PNG test failed on a Buffer `RangeError` and produced a real fix, a chunk-length guard.
+
 ## Docs and site
 
 - [ ] **HL-16 — Documentation site**: GitHub Pages from `docs/`, with the generated rule reference as its reference section and the roadmap as its plan (the sibling lenses already do this).

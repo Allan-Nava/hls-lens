@@ -3,6 +3,16 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.3.3] - 2026-08-17
+
+Il generatore dell'icona era l'ultimo pezzo di logica senza test: verificato a mano su quattro casi, che passano una volta sola e non lasciano niente dietro.
+
+### Modificato
+
+- **`src/core/png.ts`** (HL-20): `drawIcon` (il mark disegnato da primitive), `encodePng`/`decodePng` (8-bit RGBA, filtro 0, un IDAT) e `comparePixels` escono dallo script ed entrano nel core testato. `scripts/make-icon.ts` resta I/O — leggere un file, scriverne uno, scegliere un exit code — ed è bundlato come gli altri tool dalla mappa `TOOLS` di `esbuild.mjs`. **Il PNG committato è invariato byte per byte**: il refactor non tocca l'artefatto.
+- **Test scritti prima, RED verificato**, e uno ha trovato un difetto vero: su un PNG troncato il decoder usciva con un `RangeError` di `Buffer` invece che con un errore che dice qual è il problema. Ora c'è una guardia sulla lunghezza del chunk. Gli altri coprono i pixel del mark (sfondo, i due verdi dei gradini, il rosso del difetto, l'angolo trasparente), il round-trip encode/decode, il rifiuto di un file non prodotto dal generatore e — il caso che ha fatto fallire la CI — due livelli di compressione della stessa immagine che devono risultare uguali.
+- **La regola in `CLAUDE.md` diventa generale**: TDD con RED verificato per *qualunque* logica, generatori e tooling di build inclusi; se è logica sta in `src/core/` con un test, e lo script è glue. Solo la UI glue di `src/extension.ts` resta esente.
+
 ## [0.3.2] - 2026-08-17
 
 Il primo push ha fatto girare la CI per davvero, e due gate si sono rotti nel modo in cui si rompono i gate: assumendo qualcosa che l'ambiente non garantisce.
@@ -73,6 +83,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.3.3]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.3.3
 [0.3.2]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.3.2
 [0.3.1]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.3.1
 [0.3.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.3.0
