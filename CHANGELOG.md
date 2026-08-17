@@ -3,6 +3,15 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.9.1] - 2026-08-17
+
+Nessun codice: la milestone successiva, aperta dove le milestone si aprono.
+
+### Modificato
+
+- **Nuova sezione `## Low latency` nel `BACKLOG.md`** — quindi una nuova milestone su GitHub e quattro issue (`HL-21`…`HL-24`), create dal sync e non a mano. I tag LL-HLS (`EXT-X-PART`, `EXT-X-PART-INF`, `EXT-X-SERVER-CONTROL`, `EXT-X-PRELOAD-HINT`, `EXT-X-RENDITION-REPORT`) il parser li legge già e `src/core/spec.ts` li documenta già nell'hover: **nessuna regola ne guarda uno**. Un manifest può dichiarare parti che nessun player riuscirà a usare e l'estensione tace.
+- La sezione tematica `## Rules that pay for themselves`, svuotata quando le sue voci sono passate a `v0.4.0`, resta nel file ma **non esiste più per gli strumenti**: `parseBacklog` scarta le sezioni senza voci, quindi non è nel roadmap e il sync la elenca già fra le nove milestone orfane da cancellare a mano. Toglierla dal file non cambierebbe niente di quello che il sync vede.
+
 ## [0.9.0] - 2026-08-17
 
 Il sito della documentazione, generato dagli stessi documenti che il repo tiene già — e ancora senza dipendenze.
