@@ -48,8 +48,8 @@ From the Marketplace: search **HLS Lens**. Or build the `.vsix` yourself:
 
 ```bash
 npm install
-npm run package        # → hls-lens-0.2.0.vsix
-code --install-extension hls-lens-0.2.0.vsix
+npm run package        # → hls-lens-0.3.0.vsix
+code --install-extension hls-lens-0.3.0.vsix
 ```
 
 For the deep check, install segcheck (`brew install --cask allan-nava/tap/segcheck`, or a binary from [its releases](https://github.com/Allan-Nava/segcheck/releases)) and point `hlsLens.segcheck.path` at it if it is not on your `PATH`.
@@ -99,6 +99,30 @@ npm run typecheck
 npm run docs       # regenerate docs/RULES.md from the catalogue (CI checks this)
 npm run roadmap    # regenerate docs/ROADMAP.md from BACKLOG.md (CI checks this)
 ```
+
+## Releasing
+
+A pushed `v*` tag is the whole release process. [`ci.yml`](.github/workflows/ci.yml) runs the tests,
+refuses a tag that disagrees with `package.json`, packages the `.vsix`, attaches it to the GitHub
+release, and then publishes **that same file** — not a fresh package — to the VS Code Marketplace and
+to Open VSX:
+
+```bash
+# after the changelog entry and the version bump
+git tag -a v0.3.0 -m "Release 0.3.0" && git push origin main --follow-tags
+```
+
+The two store credentials live in the `marketplace` environment, which is also where you can require
+a manual approval before a tag reaches users:
+
+| Secret | Where it comes from | Missing? |
+|---|---|---|
+| `VSCE_PAT` | Azure DevOps PAT, scope **Marketplace › Manage**, for the `allannava95` publisher | Warns and skips the Marketplace step |
+| `OVSX_PAT` | [Open VSX](https://open-vsx.org) access token, namespace `allannava95` | Warns nothing, skips Open VSX |
+
+A missing PAT never fails the run: the `.vsix` is still built and attached to the release, so a tag
+is releasable before the store accounts exist. Once `VSCE_PAT` is set, **every** tag publishes — the
+project tags every commit, so bump the version deliberately.
 
 ## Roadmap
 

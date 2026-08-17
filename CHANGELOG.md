@@ -3,6 +3,20 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.3.0] - 2026-08-17
+
+Pubblicazione automatica: un tag `v*` pushato è tutto il processo di release, store inclusi.
+
+### Aggiunto
+
+- **Job `publish` in `ci.yml`** (HL-15): su un tag `v*`, dopo che `release` ha pacchettizzato e allegato il `.vsix`, pubblica sul **VS Code Marketplace** (`vsce publish`) e su **Open VSX** (`ovsx publish --skip-duplicate`). Pubblica il **file esatto** allegato alla release invece di ripacchettizzare: quello che si installa dal Marketplace è byte per byte quello che sta sulla release. I PAT vivono nell'environment `marketplace`, che è anche il punto dove mettere un'approvazione manuale prima che un tag arrivi agli utenti.
+- `ovsx` fra le devDependencies, pinnato: sia `vsce` che `ovsx` arrivano dal lockfile, perché un publish è l'unico job che non deve cambiare sotto i piedi (nessuna dipendenza **runtime**, come prima).
+
+### Modificato
+
+- **Un PAT mancante avvisa e salta, non fallisce**: senza `VSCE_PAT` il `.vsix` viene comunque costruito e allegato alla release, con un `::warning::` sulla run. Una X rossa su una build che ha prodotto un `.vsix` corretto si legge come "la release è rotta", quando la verità è "le credenziali dello store non ci sono ancora".
+- **`scripts/backlog-sync.ts` verifica il repo prima di scrivere**: il 404 è un valore in tutto il resto dello script ("label non ancora creata", "milestone non ancora creata"), e questo rendeva un repo inesistente, un `GITHUB_REPOSITORY` sbagliato e un token senza accesso indistinguibili da un backlog vuoto — la run finiva con successo senza fare niente. Ora una richiesta iniziale su `/repos/:owner/:repo` trasforma quel silenzio in un errore con exit 1.
+
 ## [0.2.0] - 2026-08-17
 
 Il piano di lavoro si mantiene da solo: `BACKLOG.md` è l'unica sorgente, roadmap e issue tracker sono proiezioni generate.
@@ -44,5 +58,6 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.3.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.1.0

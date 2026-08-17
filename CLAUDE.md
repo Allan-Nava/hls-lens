@@ -8,6 +8,7 @@ Filosofia: le regole leggono le *dichiarazioni* del manifest e puntano alla riga
 
 - **Ogni commit = release taggata `vX.Y.Z`**: nuova sezione in `CHANGELOG.md` (Keep a Changelog, in italiano) + `git tag -a vX.Y.Z -m "Release X.Y.Z"`. Bump `minor` per novità sostanziali (nuove regole, nuove feature editor), `patch` per fix. Senza chiederlo. Il campo `version` di `package.json` deve coincidere col tag (vsce lo pretende).
 - **MAI `git push`** — lo fa sempre l'utente. MAI `Co-Authored-By` nei commit.
+- **Un tag `v*` pushato pubblica sugli store** (job `publish` in `ci.yml`: Marketplace + Open VSX, con il `.vsix` esatto allegato alla release). Combinato con la regola "ogni commit = release taggata", significa che ogni push di un tag arriva agli utenti: la versione si bumpa con intenzione, e il `CHANGELOG.md` è la release note. Senza `VSCE_PAT`/`OVSX_PAT` nell'environment `marketplace` il job avvisa e salta, non fallisce.
 - **Gate prima di chiudere**: `npm run typecheck` + `npm test` + `npm run docs` + `npm run roadmap` (gli ultimi due devono essere un no-op) verdi. Stessi check della CI.
 - **La logica va nel core puro** (`src/core/` — MAI import `vscode` lì) con test in `test/run.ts`; `src/extension.ts` è solo glue UI (non testata).
 - **TDD stretto sul core**: per ogni logica nuova/modificata in `src/core/`, scrivere prima il test e **verificare il RED** *prima* di implementare, poi portarlo a GREEN. La UI glue è esente per scelta.

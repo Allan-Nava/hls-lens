@@ -24,7 +24,7 @@ The repository maintaining itself: what is tracked, what is documented and what 
 not depend on remembering to do it by hand.
 
 - [x] **HL-17 — Backlog and roadmap automation**: `BACKLOG.md` parsed in the pure core (`src/core/backlog.ts`), `docs/ROADMAP.md` generated from it (`npm run roadmap`, no-op gate in CI), and the `backlog-sync` workflow making GitHub milestones and issues an idempotent mirror of the file, anchored on the `HL-n` ids.
-- [ ] **HL-15 — Publish on tag**: extend the `release` job to `vsce publish` on a `v*` tag once `VSCE_PAT` is in the repository secrets, plus `ovsx publish` for Open VSX. The `.vsix` is already built and attached to the release.
+- [x] **HL-15 — Publish on tag**: `publish` job in `ci.yml` that on a `v*` tag uploads to the VS Code Marketplace (`vsce publish`) and to Open VSX (`ovsx publish`), publishing the exact `.vsix` the `release` job attached rather than repackaging it. Both publishers are pinned in the lockfile, the PATs live in the `marketplace` environment, and a missing PAT warns and skips instead of failing a tag that released correctly. Setting up `VSCE_PAT`/`OVSX_PAT` is an account action, not a repository one.
 - [ ] **HL-16 — Documentation site**: GitHub Pages from `docs/`, with the generated rule reference as its reference section and the roadmap as its plan (the sibling lenses already do this).
 
 ## v0.3 — Rules that pay for themselves

@@ -6,12 +6,12 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**2 of 18 items done** · `█░░░░░░░░░` 11%
+**3 of 18 items done** · `█░░░░░░░░░` 17%
 
 | Milestone | State | Done |
 |---|---|---|
 | [v0.1 — Foundation](#v01--foundation) | ✅ shipped | 1/1 |
-| [v0.2 — Plumbing](#v02--plumbing) | 🚧 in progress | 1/3 |
+| [v0.2 — Plumbing](#v02--plumbing) | 🚧 in progress | 2/3 |
 | [v0.3 — Rules that pay for themselves](#v03--rules-that-pay-for-themselves) | ⏳ planned | 0/6 |
 | [v0.4 — Editor](#v04--editor) | ⏳ planned | 0/3 |
 | [v0.5 — More than one file at a time](#v05--more-than-one-file-at-a-time) | ⏳ planned | 0/4 |
@@ -29,10 +29,10 @@ Reading a manifest in the editor at all: the pure core, the diagnostics, the tre
 
 The repository maintaining itself: what is tracked, what is documented and what is released should not depend on remembering to do it by hand.
 
-🚧 in progress · 1 of 3 · `███░░░░░░░`
+🚧 in progress · 2 of 3 · `██████░░░░`
 
 - [x] **HL-17 — Backlog and roadmap automation**: `BACKLOG.md` parsed in the pure core (`src/core/backlog.ts`), `docs/ROADMAP.md` generated from it (`npm run roadmap`, no-op gate in CI), and the `backlog-sync` workflow making GitHub milestones and issues an idempotent mirror of the file, anchored on the `HL-n` ids.
-- [ ] **HL-15 — Publish on tag**: extend the `release` job to `vsce publish` on a `v*` tag once `VSCE_PAT` is in the repository secrets, plus `ovsx publish` for Open VSX. The `.vsix` is already built and attached to the release.
+- [x] **HL-15 — Publish on tag**: `publish` job in `ci.yml` that on a `v*` tag uploads to the VS Code Marketplace (`vsce publish`) and to Open VSX (`ovsx publish`), publishing the exact `.vsix` the `release` job attached rather than repackaging it. Both publishers are pinned in the lockfile, the PATs live in the `marketplace` environment, and a missing PAT warns and skips instead of failing a tag that released correctly. Setting up `VSCE_PAT`/`OVSX_PAT` is an account action, not a repository one.
 - [ ] **HL-16 — Documentation site**: GitHub Pages from `docs/`, with the generated rule reference as its reference section and the roadmap as its plan (the sibling lenses already do this).
 
 ## v0.3 — Rules that pay for themselves

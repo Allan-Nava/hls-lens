@@ -81,6 +81,13 @@ jobs:
             exit 1
           fi
           npx @vscode/vsce package --no-dependencies --out "hls-lens-${version}.vsix"
+      # Handed to the publish job, which uploads this exact file to the stores instead of
+      # repackaging: what users install is then byte-for-byte what the release attaches.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-vsix
+          path: hls-lens-*.vsix
+          if-no-files-found: error
       - uses: softprops/action-gh-release@v2
         with:
           files: hls-lens-*.vsix
@@ -93,3 +100,62 @@ jobs:
             code --install-extension hls-lens-<version>.vsix
             ```
           generate_release_notes: true
+
+  # Publishing to the stores. Runs on a v* tag, after release has built and attached the
+  # .vsix — so the tag/version check has already passed and this job publishes that exact
+  # file rather than repackaging it.
+  #
+  # Secrets, in the `marketplace` environment:
+  #   VSCE_PAT  Azure DevOps PAT, scope Marketplace > Manage, for the `allannava95` publisher
+  #   OVSX_PAT  Open VSX token (optional; without it that step is skipped)
+  #
+  # Neither is required for a tag to release: a missing PAT warns and skips rather than
+  # failing the run, because a red X on a build that produced a correct .vsix reads as
+  # "the release is broken" when the truth is "the store credentials are not set up yet".
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: release
+    runs-on: ubuntu-latest
+    # An environment is where the PATs live, and it is also the hook for requiring a manual
+    # approval before a tag reaches the Marketplace.
+    environment: marketplace
+    permissions:
+      contents: read
+    env:
+      # Hoisted to env because the secrets context cannot be read from a step-level `if`.
+      VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      # vsce and ovsx come from the lockfile rather than from `npx` resolving whatever is
+      # latest that day: a publish is the one job that must not change under you.
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-vsix
+      - name: Locate the packaged .vsix
+        id: vsix
+        run: |
+          count="$(ls -1 hls-lens-*.vsix 2>/dev/null | wc -l | tr -d ' ')"
+          if [ "$count" != "1" ]; then
+            echo "::error::expected exactly one hls-lens-*.vsix from the release job, found $count"
+            exit 1
+          fi
+          echo "path=$(ls -1 hls-lens-*.vsix)" >> "$GITHUB_OUTPUT"
+      - name: Warn when the Marketplace PAT is missing
+        if: env.VSCE_PAT == ''
+        run: |
+          echo "::warning::VSCE_PAT is not configured — skipping the Marketplace publish. The .vsix is attached to the release; add the secret to publish on the next tag."
+      - name: Publish to the VS Code Marketplace
+        if: env.VSCE_PAT != ''
+        run: npx @vscode/vsce publish --no-dependencies --packagePath "${{ steps.vsix.outputs.path }}"
+      - name: Publish to Open VSX
+        if: env.OVSX_PAT != ''
+        # ovsx reads OVSX_PAT from the environment; passing --pat would put the token in the
+        # process arguments. --skip-duplicate keeps a re-run of the job from failing on a
+        # version Open VSX already has, which is what a partial first run leaves behind.
+        run: npx ovsx publish --skip-duplicate "${{ steps.vsix.outputs.path }}"
