@@ -18,6 +18,7 @@ import { analyzeAcross, LoadedRendition } from '../src/core/crosscheck';
 import { diffPlaylists, describeChange, watchIntervalMs } from '../src/core/watch';
 import { parseXml, findAll, attr } from '../src/core/xml';
 import { parseIsoDuration, analyzeMpd } from '../src/core/dash';
+import { frontMatter, renderMarkdown, renderPage, pageTitle } from '../src/core/markdown';
 import { analyze, RULES, Finding, Severity } from '../src/core/analyze';
 import { buildLadder, renditionRows, ladderSummary, formatBandwidth, formatResolution } from '../src/core/ladder';
 import { resolveUri, baseOf, isRemote, isPlainHttp, looksLikePlaylistUri } from '../src/core/uri';
@@ -839,6 +840,107 @@ async function main(): Promise<void> {
       [],
       'a normal media playlist is not an I-frame playlist',
     );
+  });
+
+  // ------------------------------------------------------------------- markdown
+  await test('frontMatter takes the title off the top of a document', () => {
+    const page = frontMatter('---\ntitle: Usage\n---\n\n# Usage\n\nBody.\n');
+    assert.strictEqual(page.title, 'Usage');
+    assert.strictEqual(page.body.trimStart().startsWith('# Usage'), true, 'the front matter is removed from the body');
+    const bare = frontMatter('# Rules\n\nBody.\n');
+    assert.strictEqual(bare.title, undefined);
+    assert.strictEqual(bare.body, '# Rules\n\nBody.\n');
+  });
+
+  await test('renderMarkdown renders the constructs the docs actually use', () => {
+    const html = renderMarkdown(
+      [
+        '# Title',
+        '',
+        'A paragraph with `code`, **bold**, *italic* and a [link](RULES.md).',
+        '',
+        '## Section',
+        '',
+        '- one',
+        '- two',
+        '',
+        '| Rule | Severity |',
+        '|---|---|',
+        '| `media/gap` | warning |',
+        '',
+        '```bash',
+        'npm run docs',
+        '```',
+      ].join('\n'),
+    );
+    assert.match(html, /<h1 id="title">Title<\/h1>/);
+    assert.match(html, /<h2 id="section">Section<\/h2>/, 'headings carry an anchor id');
+    assert.match(html, /<code>code<\/code>/);
+    assert.match(html, /<strong>bold<\/strong>/);
+    assert.match(html, /<em>italic<\/em>/);
+    assert.match(html, /<a href="RULES\.html">link<\/a>/, 'links between documents point at the built pages');
+    assert.match(html, /<ul>\s*<li>one<\/li>\s*<li>two<\/li>\s*<\/ul>/);
+    assert.match(html, /<table>[\s\S]*<th>Rule<\/th>[\s\S]*<td><code>media\/gap<\/code><\/td>[\s\S]*<\/table>/);
+    assert.match(html, /<pre><code class="language-bash">npm run docs\n<\/code><\/pre>/);
+  });
+
+  await test('renderMarkdown escapes what would otherwise be markup', () => {
+    const html = renderMarkdown('A <script>alert(1)</script> and 5 < 6 & 7 > 6.\n\n```\n<MPD type="static"/>\n```\n');
+    assert.ok(!html.includes('<script>'), 'no raw script tag survives');
+    assert.match(html, /&lt;script&gt;/);
+    assert.match(html, /5 &lt; 6 &amp; 7 &gt; 6/);
+    assert.match(html, /&lt;MPD type="static"\/&gt;/, 'a code block is escaped too');
+  });
+
+  await test('renderMarkdown keeps inline code literal', () => {
+    // The rule ids and tag names in these docs are full of characters that would
+    // otherwise be read as emphasis or markup.
+    const html = renderMarkdown('Use `#EXT-X-MAP:URI="init.mp4"` and `$Number$` and `a*b*c`.\n');
+    assert.match(html, /<code>#EXT-X-MAP:URI="init\.mp4"<\/code>/);
+    assert.match(html, /<code>\$Number\$<\/code>/);
+    assert.match(html, /<code>a\*b\*c<\/code>/, 'asterisks inside code are not emphasis');
+  });
+
+  await test('renderMarkdown does not mistake a number in the prose for a code span', () => {
+    // The code spans are lifted out and put back by index; a placeholder that can
+    // occur in ordinary text would swallow it. These documents are full of numbers.
+    const html = renderMarkdown('The ladder has 4 rungs and `EXT-X-VERSION` is 7, so 0 problems.\n');
+    assert.match(html, /The ladder has 4 rungs and <code>EXT-X-VERSION<\/code> is 7, so 0 problems\./);
+    assert.ok(!html.includes('undefined'));
+  });
+
+  await test('pageTitle falls back to the first heading of a generated document', () => {
+    // docs/RULES.md and docs/ROADMAP.md are generated and carry no front matter; a
+    // browser tab reading "HLS Lens" for every page is no navigation at all.
+    assert.strictEqual(pageTitle(frontMatter('---\ntitle: Usage\n---\n\n# Something else\n')), 'Usage', 'front matter wins');
+    assert.strictEqual(pageTitle(frontMatter('<!-- generated -->\n\n# Rules\n\nBody.\n')), 'Rules');
+    assert.strictEqual(pageTitle(frontMatter('Body with no heading.\n')), undefined);
+  });
+
+  await test('renderPage wraps the body in a self-contained document', () => {
+    const html = renderPage({ title: 'Usage', body: renderMarkdown('# Usage\n') }, 'USAGE.md');
+    assert.match(html, /^<!doctype html>/i);
+    assert.match(html, /<title>Usage · HLS Lens<\/title>/);
+    // The landing page is already called HLS Lens: "HLS Lens · HLS Lens" is a tab
+    // title nobody would write by hand.
+    const landing = renderPage({ title: 'HLS Lens', body: '' }, 'index.md');
+    assert.match(landing, /<title>HLS Lens<\/title>/);
+    assert.match(html, /<style>/, 'the CSS is inline: the site is files, not a build system');
+    assert.ok(!/<script/i.test(html), 'and there is no script at all');
+    assert.match(html, /href="index\.html"/, 'every page carries the nav');
+    assert.ok(!/\d{4}-\d{2}-\d{2}/.test(html), 'no date stamp: the output has to be reproducible');
+  });
+
+  await test('the real documents render without losing their headings', () => {
+    for (const name of ['index.md', 'USAGE.md', 'RULES.md', 'ROADMAP.md']) {
+      const source = fs.readFileSync(path.join(__dirname, '..', 'docs', name), 'utf8');
+      const page = frontMatter(source);
+      const html = renderMarkdown(page.body);
+      const headings = (source.match(/^#{1,3} /gm) ?? []).length;
+      const rendered = (html.match(/<h[1-3] /g) ?? []).length;
+      assert.strictEqual(rendered, headings, `${name}: every heading survives`);
+      assert.ok(!html.includes(' '));
+    }
   });
 
   // ------------------------------------------------------------------- xml, mpd

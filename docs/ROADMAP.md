@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**19 of 21 items done** · `█████████░` 90%
+**20 of 21 items done** · `█████████░` 95%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -20,7 +20,7 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [v0.6.0 — More than one file at a time](#v060--more-than-one-file-at-a-time) | ✅ shipped | 2/2 |
 | [v0.7.0 — Watching a stream move](#v070--watching-a-stream-move) | ✅ shipped | 2/2 |
 | [v0.8.0 — DASH](#v080--dash) | ✅ shipped | 1/1 |
-| [Docs and site](#docs-and-site) | ⏳ planned | 0/1 |
+| [v0.9.0 — Documentation site](#v090--documentation-site) | ✅ shipped | 1/1 |
 | [More than one file at a time](#more-than-one-file-at-a-time) | ⏳ planned | 0/1 |
 
 ## v0.1.0 — Reading manifests
@@ -106,11 +106,11 @@ The first rules that need the master and its renditions at once.
 
 - [x] **HL-8 — MPD parser and a `dash/*` rule category**: `src/core/xml.ts` (a narrow XML reader written here, so the extension still has no dependencies) and `src/core/dash.ts` with eleven rules — `@mediaPresentationDuration` against the segment timeline, `<S>` elements that do not chain, a dynamic manifest with no `<UTCTiming>`, an adaptation set with no `@segmentAlignment`, a `@media` template with no `$Number$`, and a `.mpd` that is really an error page a CDN returned. `.mpd` files get diagnostics like `.m3u8` files do. The name of the extension stays HLS-first; DASH manifests are read, not the headline.
 
-## Docs and site
+## v0.9.0 — Documentation site
 
-⏳ planned · 0 of 1 · `░░░░░░░░░░`
+✅ shipped · 1 of 1 · `██████████`
 
-- [ ] **HL-16 — Documentation site**: GitHub Pages from `docs/`, with the generated rule reference as its reference section and the roadmap as its plan (the sibling lenses already do this).
+- [x] **HL-16 — Documentation site**: `src/core/markdown.ts` renders the subset of markdown these documents use (headings, lists, pipe tables, fenced code, inline spans, links) and wraps each one in a self-contained page — inline CSS, no script, no font to fetch, still no dependencies. `scripts/build-site.ts` turns `docs/` into `site/`, and `pages.yml` deploys it. **`site/` is not committed**: it is rebuilt from the markdown on every deploy, and two of those documents are themselves generated and gated in CI, so a page cannot describe a state the code is not in.
 
 ## More than one file at a time
 

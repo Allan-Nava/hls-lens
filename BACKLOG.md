@@ -87,9 +87,9 @@ The first rules that need the master and its renditions at once.
 
 - [x] **HL-8 — MPD parser and a `dash/*` rule category**: `src/core/xml.ts` (a narrow XML reader written here, so the extension still has no dependencies) and `src/core/dash.ts` with eleven rules — `@mediaPresentationDuration` against the segment timeline, `<S>` elements that do not chain, a dynamic manifest with no `<UTCTiming>`, an adaptation set with no `@segmentAlignment`, a `@media` template with no `$Number$`, and a `.mpd` that is really an error page a CDN returned. `.mpd` files get diagnostics like `.m3u8` files do. The name of the extension stays HLS-first; DASH manifests are read, not the headline.
 
-## Docs and site
+## v0.9.0 — Documentation site
 
-- [ ] **HL-16 — Documentation site**: GitHub Pages from `docs/`, with the generated rule reference as its reference section and the roadmap as its plan (the sibling lenses already do this).
+- [x] **HL-16 — Documentation site**: `src/core/markdown.ts` renders the subset of markdown these documents use (headings, lists, pipe tables, fenced code, inline spans, links) and wraps each one in a self-contained page — inline CSS, no script, no font to fetch, still no dependencies. `scripts/build-site.ts` turns `docs/` into `site/`, and `pages.yml` deploys it. **`site/` is not committed**: it is rebuilt from the markdown on every deploy, and two of those documents are themselves generated and gated in CI, so a page cannot describe a state the code is not in.
 
 ## Rules that pay for themselves
 

@@ -33,6 +33,7 @@ npm run backlog:sync     # milestone + issue GitHub da BACKLOG.md; in CI lo fa i
                          # locale: GITHUB_TOKEN=$(gh auth token) GITHUB_REPOSITORY=Allan-Nava/hls-lens DRY_RUN=1 npm run backlog:sync
 npm run icon             # rigenera media/icon.png da primitive
 npm run icon:check       # verifica i PIXEL del PNG committato contro il generatore (gate in CI)
+npm run site             # costruisce site/ da docs/ (quello che pubblica Pages; site/ NON si committa)
 npm run package          # .vsix locale (vsce --no-dependencies)
 
 # Prova rapida sulle fixture, senza Extension Host
@@ -47,6 +48,7 @@ code test/fixtures/media-live-broken.m3u8   # 6 regole devono accendersi
 - `src/core/ladder.ts` — modello dell'albero (`buildLadder`, `renditionRows`, `ladderSummary`) e formattazione (`formatBandwidth`, `formatResolution`).
 - `src/core/uri.ts` — `resolveUri`/`baseOf`/`isRemote`/`isPlainHttp`/`looksLikePlaylistUri`/`looksLikeFmp4Uri`.
 - `src/core/crosscheck.ts` — `analyzeAcross`: le regole che servono il master e le sue rendition insieme (versione, target duration, conteggio segmenti, drift delle boundary, discontinuità, finestra live, BANDWIDTH vs EXT-X-BITRATE). I finding si ancorano alla riga dell'`EXT-X-STREAM-INF` nel master, che è il file aperto.
+- `src/core/markdown.ts` — il sottoinsieme di markdown che i documenti usano davvero (heading, liste, tabelle pipe, code fence, inline, link) più `renderPage`. Tutto escapato di default, code span estratti **prima** dell'emphasis con sentinella `\u0000` (un asterisco dentro un id di regola non è corsivo), output deterministico. Non è una dipendenza per lo stesso motivo di `xml.ts`.
 - `src/core/xml.ts` — lettore XML minimo (elementi, attributi, annidamento, indici di riga 0-based). Non fa entity expansion oltre le cinque predefinite, né DTD né namespace: un MPD che ne ha bisogno viene **segnalato**, non indovinato. Non è una dipendenza per lo stesso motivo per cui non ce ne sono altre.
 - `src/core/dash.ts` — `parseIsoDuration` e `analyzeMpd`: le 11 regole `dash/*` (timeline, durata dichiarata, UTCTiming, allineamento, template). Le voci del catalogo stanno in `analyze.ts` come tutte le altre.
 - `src/core/watch.ts` — `diffPlaylists` (segmenti matchati per **URI**, non per indice: l'indice cambia a ogni scorrimento della finestra), `describeChange` e `watchIntervalMs` (target duration, con pavimento a 2s). Nessun clock e nessuna rete: il polling lo fa la glue.
@@ -77,7 +79,7 @@ code test/fixtures/media-live-broken.m3u8   # 6 regole devono accendersi
 
 ## Puntatori
 
-- Backlog: `BACKLOG.md` · CI: `.github/workflows/ci.yml` · Sync backlog: `.github/workflows/backlog-sync.yml` · Generati: `docs/RULES.md`, `docs/ROADMAP.md`
+- Backlog: `BACKLOG.md` · CI: `.github/workflows/ci.yml` · Sync backlog: `.github/workflows/backlog-sync.yml` · Sito: `.github/workflows/pages.yml` · Generati: `docs/RULES.md`, `docs/ROADMAP.md`, `site/` (non committato)
 - Fixture: `test/fixtures/` (`master-clean`, `master-broken`, `media-vod-clean`, `media-live-broken`)
 - Binario delegato: `~/projects/github.com/segcheck` (contratto JSON in `internal/output/output.go`)
 - Repo gemelli (stesso scaffold): `~/projects/github.com/nats-lens`, `nomad-lens`, `ansible-vars-lens`

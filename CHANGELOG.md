@@ -3,6 +3,18 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.9.0] - 2026-08-17
+
+Il sito della documentazione, generato dagli stessi documenti che il repo tiene già — e ancora senza dipendenze.
+
+### Aggiunto
+
+- **`src/core/markdown.ts`**: il sottoinsieme di markdown che questi documenti usano davvero — heading (con áncora), paragrafi, liste, tabelle pipe di GitHub, code fence, code span, grassetto/corsivo, link — e nient'altro. Non è pigrizia: un'implementazione generale di markdown è una dipendenza, e questa estensione non ne ha per scelta. L'ambito è **verificato da un test** che renderizza ogni file di `docs/` e pretende che nessun heading si perda.
+  - Tutto è escapato di default: le razionali delle regole sono piene di `<MPD>` e `#EXT-X-MAP:URI="…"`, e la lettura sicura di uno `<script>` in un esempio di manifest è il testo letterale.
+  - I **code span vengono estratti prima** dell'emphasis, con sentinella `\u0000`: un asterisco dentro un id di regola non deve diventare corsivo, e un numero nella prosa ("4 gradini", "versione 7") non deve essere scambiato per un segnaposto. Entrambi i casi hanno un test.
+- **`scripts/build-site.ts`** (`npm run site`) e il workflow **`pages.yml`**: `docs/` → `site/`, una pagina HTML autoconsistente per documento (CSS inline, nessuno script, nessun font da scaricare), pubblicata su GitHub Pages. Il titolo della pagina viene dal front matter o, per i documenti generati che non ce l'hanno, dal primo heading.
+- **`site/` non si committa**: viene ricostruito a ogni deploy dai markdown, e due di quei documenti sono a loro volta generati e gated in CI — quindi una pagina non può descrivere uno stato in cui il codice non è. Il workflow lancia `npm test` prima di costruire: un renderer rotto non deve pubblicare.
+
 ## [0.8.0] - 2026-08-17
 
 DASH. 47 → 58 regole, e ancora **zero dipendenze**: il lettore XML è scritto qui.
@@ -165,6 +177,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.9.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.9.0
 [0.8.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.6.0

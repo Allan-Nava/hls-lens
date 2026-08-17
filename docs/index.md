@@ -13,6 +13,8 @@ An `.m3u8` file is a list of claims, and a text editor shows you all of them equ
 - [Roadmap](ROADMAP.md) — what is shipped and what is next, generated from the backlog
 - [Source on GitHub](https://github.com/Allan-Nava/hls-lens)
 
+This site is built from the same markdown the repository keeps, by a renderer that is part of the extension: no theme, no framework, no dependency — the same rule the code follows.
+
 ## In one screenshot's worth of words
 
 ```m3u8

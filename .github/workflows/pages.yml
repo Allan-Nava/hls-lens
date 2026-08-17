@@ -1,0 +1,49 @@
+name: Pages
+
+# Publishes site/ — built from docs/ by scripts/build-site.ts — to GitHub Pages.
+# Nothing generated is committed: the pages are rebuilt from the markdown on every
+# deploy, and two of those documents are themselves generated and gated in ci.yml.
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "docs/**"
+      - "src/core/markdown.ts"
+      - "scripts/build-site.ts"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deploy at a time, and never cancel one half-way: a partial upload would be
+# published as the whole site.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      # The renderer is core code with tests; a build that throws must not deploy.
+      - run: npm test
+      - run: npm run site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4
