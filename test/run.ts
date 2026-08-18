@@ -11,7 +11,7 @@ import * as path from 'path';
 import { AddressInfo } from 'net';
 
 import { parseAttributeList, attrInt, attrFloat, attrResolution, attrList, attrBool } from '../src/core/attrs';
-import { parsePlaylist, looksLikePlaylist, KNOWN_TAG_NAMES } from '../src/core/playlist';
+import { parsePlaylist, looksLikePlaylist, KNOWN_TAG_NAMES, Playlist } from '../src/core/playlist';
 import { tagSpec, renderTagHover, SPEC_TAGS, completeAt } from '../src/core/spec';
 import { quickFixesFor } from '../src/core/fixes';
 import { analyzeAcross, LoadedRendition } from '../src/core/crosscheck';
@@ -1736,6 +1736,142 @@ async function main(): Promise<void> {
     // leaks which manifests were opened.
     assert.ok(!/(src|href)="https?:/.test(html), 'no external resource');
     assert.strictEqual(html, renderTimelineHtml(model, { title: 'live.m3u8', nonce: 'n0nce' }));
+  });
+
+  // ----------------------------------------------------------------- variables
+  await test('the parser substitutes the variables the playlist defines', () => {
+    const text =
+      '#EXTM3U\n#EXT-X-VERSION:8\n#EXT-X-DEFINE:NAME="host",VALUE="cdn.example.com"\n#EXT-X-TARGETDURATION:6\n' +
+      '#EXT-X-MAP:URI="https://{$host}/init.mp4"\n#EXTINF:6.000,\nhttps://{$host}/a.ts\n#EXT-X-ENDLIST\n';
+    const pl = parsePlaylist(text);
+    assert.strictEqual(pl.variables.get('host'), 'cdn.example.com');
+    assert.strictEqual(pl.segments[0].uri, 'https://cdn.example.com/a.ts');
+    assert.strictEqual(pl.maps[0].attrs.get('URI'), 'https://cdn.example.com/init.mp4');
+    // Every reference is kept with its line, so a finding can point at the one that
+    // is wrong rather than at the tag that should have defined it.
+    assert.deepStrictEqual(
+      pl.variableRefs.map((r) => r.name),
+      ['host', 'host'],
+    );
+    assert.ok(pl.lines[pl.variableRefs[1].line].includes('{$host}'));
+  });
+
+  await test('a variable nothing defines is reported where it is used', () => {
+    const undefinedVar =
+      '#EXTM3U\n#EXT-X-VERSION:8\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000,\nhttps://{$host}/a.ts\n#EXT-X-ENDLIST\n';
+    const found = findingsOf(undefinedVar, 'syntax/undefined-variable');
+    assert.strictEqual(found.length, 1);
+    assert.ok(parsePlaylist(undefinedVar).lines[found[0].line].includes('{$host}'));
+    // The URI keeps the braces: nothing was substituted, and that is what is requested.
+    assert.strictEqual(parsePlaylist(undefinedVar).segments[0].uri, 'https://{$host}/a.ts');
+
+    // IMPORT and QUERYPARAM define the name too, even though the value arrives later.
+    for (const define of ['#EXT-X-DEFINE:IMPORT="host"', '#EXT-X-DEFINE:QUERYPARAM="host"']) {
+      const declared =
+        `#EXTM3U\n#EXT-X-VERSION:8\n${define}\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000,\nhttps://{$host}/a.ts\n#EXT-X-ENDLIST\n`;
+      assert.strictEqual(findingsOf(declared, 'syntax/undefined-variable').length, 0, define);
+    }
+  });
+
+  await test('an EXT-X-DEFINE that defines nothing usable is reported', () => {
+    const media = (define: string): string =>
+      `#EXTM3U\n#EXT-X-VERSION:8\n${define}\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000,\na.ts\n#EXT-X-ENDLIST\n`;
+
+    // A NAME with no VALUE defines nothing; NAME+VALUE and IMPORT together are two
+    // answers to the same question.
+    assert.ok(ruleIds(analyze(parsePlaylist(media('#EXT-X-DEFINE:NAME="a"')))).includes('syntax/define-malformed'));
+    assert.ok(ruleIds(analyze(parsePlaylist(media('#EXT-X-DEFINE:NAME="a",VALUE="1",IMPORT="a"')))).includes('syntax/define-malformed'));
+    assert.ok(!ruleIds(analyze(parsePlaylist(media('#EXT-X-DEFINE:NAME="a",VALUE="1"')))).includes('syntax/define-malformed'));
+
+    // The same name twice: which value applies is the player's guess.
+    const twice = media('#EXT-X-DEFINE:NAME="a",VALUE="1"\n#EXT-X-DEFINE:NAME="a",VALUE="2"');
+    assert.ok(ruleIds(analyze(parsePlaylist(twice))).includes('syntax/define-malformed'));
+
+    // IMPORT takes the value from the master, so a master has nothing to import from.
+    const master =
+      '#EXTM3U\n#EXT-X-VERSION:8\n#EXT-X-DEFINE:IMPORT="host"\n' +
+      '#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=640x360,CODECS="avc1.4d401e"\nv.m3u8\n';
+    assert.ok(ruleIds(analyze(parsePlaylist(master))).includes('syntax/define-malformed'));
+  });
+
+  await test('session data carries exactly one value, under an id it does not share', () => {
+    const master = (data: string): string =>
+      `#EXTM3U\n#EXT-X-VERSION:7\n${data}\n#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=640x360,CODECS="avc1.4d401e"\nv.m3u8\n`;
+
+    assert.ok(ruleIds(analyze(parsePlaylist(master('#EXT-X-SESSION-DATA:DATA-ID="com.example.title"')))).includes('master/session-data'));
+    assert.ok(
+      ruleIds(analyze(parsePlaylist(master('#EXT-X-SESSION-DATA:DATA-ID="com.example.title",VALUE="a",URI="a.json"')))).includes('master/session-data'),
+    );
+    const duplicate =
+      '#EXT-X-SESSION-DATA:DATA-ID="com.example.title",VALUE="a",LANGUAGE="en"\n' +
+      '#EXT-X-SESSION-DATA:DATA-ID="com.example.title",VALUE="b",LANGUAGE="en"';
+    assert.ok(ruleIds(analyze(parsePlaylist(master(duplicate)))).includes('master/session-data'));
+
+    // The same id in two languages is the point of LANGUAGE, not a duplicate.
+    const translated =
+      '#EXT-X-SESSION-DATA:DATA-ID="com.example.title",VALUE="a",LANGUAGE="en"\n' +
+      '#EXT-X-SESSION-DATA:DATA-ID="com.example.title",VALUE="b",LANGUAGE="it"';
+    assert.ok(!ruleIds(analyze(parsePlaylist(master(translated)))).includes('master/session-data'));
+  });
+
+  await test('content steering points somewhere, once, at a pathway that exists', () => {
+    const master = (steering: string, pathway = ''): string =>
+      `#EXTM3U\n#EXT-X-VERSION:12\n${steering}\n` +
+      `#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=640x360,CODECS="avc1.4d401e"${pathway}\nv.m3u8\n`;
+
+    assert.ok(ruleIds(analyze(parsePlaylist(master('#EXT-X-CONTENT-STEERING:PATHWAY-ID="cdn-a"')))).includes('master/content-steering'));
+    const twice = '#EXT-X-CONTENT-STEERING:SERVER-URI="steer.json"\n#EXT-X-CONTENT-STEERING:SERVER-URI="other.json"';
+    assert.ok(ruleIds(analyze(parsePlaylist(master(twice)))).includes('master/content-steering'));
+
+    // A pathway no variant belongs to is a player steered nowhere.
+    const orphan = master('#EXT-X-CONTENT-STEERING:SERVER-URI="steer.json",PATHWAY-ID="cdn-b"', ',PATHWAY-ID="cdn-a"');
+    assert.ok(ruleIds(analyze(parsePlaylist(orphan))).includes('master/content-steering'));
+
+    const fine = master('#EXT-X-CONTENT-STEERING:SERVER-URI="steer.json",PATHWAY-ID="cdn-a"', ',PATHWAY-ID="cdn-a"');
+    assert.ok(!ruleIds(analyze(parsePlaylist(fine))).includes('master/content-steering'));
+  });
+
+  await test('EXT-X-START has to land inside the playlist', () => {
+    const vod = (start: string): string =>
+      `#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:6\n${start}\n#EXTINF:6.000,\na.ts\n#EXTINF:6.000,\nb.ts\n#EXT-X-ENDLIST\n`;
+    assert.ok(ruleIds(analyze(parsePlaylist(vod('#EXT-X-START:TIME-OFFSET=30')))).includes('media/start-offset'));
+    assert.ok(ruleIds(analyze(parsePlaylist(vod('#EXT-X-START:PRECISE=YES')))).includes('media/start-offset'));
+    assert.ok(!ruleIds(analyze(parsePlaylist(vod('#EXT-X-START:TIME-OFFSET=5')))).includes('media/start-offset'));
+
+    // A negative offset is measured from the live edge, and starting inside the three
+    // target durations a player buffers means starting with nothing to play.
+    const live = (start: string): string =>
+      `#EXTM3U\n#EXT-X-VERSION:6\n#EXT-X-TARGETDURATION:6\n${start}\n` +
+      '#EXTINF:6.000,\na.ts\n#EXTINF:6.000,\nb.ts\n#EXTINF:6.000,\nc.ts\n#EXTINF:6.000,\nd.ts\n#EXTINF:6.000,\ne.ts\n';
+    assert.ok(ruleIds(analyze(parsePlaylist(live('#EXT-X-START:TIME-OFFSET=-5')))).includes('media/start-offset'));
+    assert.ok(!ruleIds(analyze(parsePlaylist(live('#EXT-X-START:TIME-OFFSET=-20')))).includes('media/start-offset'));
+  });
+
+  await test('a session key that disagrees with the renditions is reported', () => {
+    const rendition = (method: string, uri: string): LoadedRendition => ({
+      uri: 'v.m3u8',
+      line: 2,
+      bandwidth: 1000000,
+      playlist: parsePlaylist(
+        `#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXT-X-KEY:METHOD=${method},URI="${uri}"\n#EXTINF:6.000,\na.ts\n#EXT-X-ENDLIST\n`,
+      ),
+    });
+    const master = (sessionKey: string): Playlist =>
+      parsePlaylist(`#EXTM3U\n${sessionKey}\n#EXT-X-STREAM-INF:BANDWIDTH=1000000\nv.m3u8\n`);
+
+    const wrong = analyzeAcross([rendition('SAMPLE-AES', 'https://k/1')], {
+      master: master('#EXT-X-SESSION-KEY:METHOD=AES-128,URI="https://k/1"'),
+    });
+    assert.ok(wrong.map((f) => f.rule).includes('cross/session-key-mismatch'), JSON.stringify(wrong.map((f) => f.rule)));
+
+    const right = analyzeAcross([rendition('AES-128', 'https://k/1')], {
+      master: master('#EXT-X-SESSION-KEY:METHOD=AES-128,URI="https://k/1"'),
+    });
+    assert.ok(!right.map((f) => f.rule).includes('cross/session-key-mismatch'));
+
+    // No session key at all is not a disagreement: the tag is optional.
+    const none = analyzeAcross([rendition('AES-128', 'https://k/1')], { master: master('#EXT-X-INDEPENDENT-SEGMENTS') });
+    assert.ok(!none.map((f) => f.rule).includes('cross/session-key-mismatch'));
   });
 
   // ------------------------------------------------------------------- backlog

@@ -737,7 +737,9 @@ async function checkTogether(): Promise<void> {
     },
   );
 
-  const findings = analyzeAcross(loaded);
+  // The master goes in too: cross/session-key-mismatch compares its EXT-X-SESSION-KEY
+  // with the keys the renditions actually use.
+  const findings = analyzeAcross(loaded, { master: active.playlist });
   const skip = config.get<string[]>('diagnostics.skip', []);
   const kept = findings.filter((f) => !skip.includes(f.rule) && !skip.includes(f.rule.split('/')[0]));
   crossDiagnostics.set(

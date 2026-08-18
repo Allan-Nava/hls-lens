@@ -30,6 +30,12 @@ export interface CrossOptions {
    * for rounding without letting a real half-second offset through.
    */
   timelineToleranceS?: number;
+  /**
+   * The master itself, when the caller has it. Only the rules that compare a
+   * master-level declaration with the renditions need it, so it stays optional:
+   * everything else here is rendition against rendition.
+   */
+  master?: Playlist;
 }
 
 const SEVERITY_RANK: Record<Severity, number> = { error: 0, warning: 1, hint: 2 };
@@ -65,6 +71,28 @@ export function analyzeAcross(renditions: LoadedRendition[], options: CrossOptio
         `the master declares BANDWIDTH=${r.bandwidth} for "${r.uri}" but the playlist itself declares EXT-X-BITRATE up to ${Math.round(peakBps)}`,
         'BANDWIDTH is the peak the rendition can reach: understating it makes ABR pick a rung the connection cannot carry',
       );
+    }
+  }
+
+  // EXT-X-SESSION-KEY is the master promising which key the renditions use, so that a
+  // player can fetch it while it is still reading the master. Checking the promise
+  // needs both files, and it needs no second rendition.
+  const sessionKeys = (options.master?.tags ?? []).filter((t) => t.name === 'EXT-X-SESSION-KEY');
+  if (sessionKeys.length > 0) {
+    const offered = sessionKeys.map((k) => keyShape(k.attrs.get('METHOD'), k.attrs.get('KEYFORMAT')));
+    for (const r of renditions) {
+      const used = r.playlist.tags
+        .filter((t) => t.name === 'EXT-X-KEY' && (t.attrs.get('METHOD') ?? '').toUpperCase() !== 'NONE')
+        .map((t) => keyShape(t.attrs.get('METHOD'), t.attrs.get('KEYFORMAT')));
+      const orphan = used.find((shape) => !offered.includes(shape));
+      if (orphan !== undefined) {
+        add(
+          'cross/session-key-mismatch',
+          r.line,
+          `"${r.uri}" is encrypted with ${orphan} and the master's EXT-X-SESSION-KEY announces ${offered.join(', ')}`,
+          'announce the key the renditions actually use, or drop the session key: a player that pre-fetches the wrong one stalls anyway, one request later',
+        );
+      }
     }
   }
 
@@ -168,4 +196,9 @@ function sortFindings(findings: Finding[]): Finding[] {
       ? SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]
       : a.line - b.line || a.rule.localeCompare(b.rule),
   );
+}
+
+/** keyShape names a key by what a player has to understand to use it. */
+function keyShape(method: string | undefined, keyFormat: string | undefined): string {
+  return `METHOD=${(method ?? '').toUpperCase() || 'none declared'}/KEYFORMAT=${keyFormat ?? 'identity'}`;
 }

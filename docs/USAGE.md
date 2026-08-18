@@ -80,6 +80,24 @@ Nothing else is offered a fix. A missing `CODECS` string, a badly spaced ladder 
 
 Only the playable video rungs are compared. An alternate audio or subtitle rendition is legitimately segmented differently, and reporting that as drift would be a finding that is not one. A rendition that cannot be read is listed in the **HLS Lens** output channel and skipped, so one unreachable rung does not hide the others.
 
+## Variables
+
+`EXT-X-DEFINE` lets one template serve several deployments, and the extension substitutes the
+variables as it parses:
+
+```m3u8
+#EXT-X-DEFINE:NAME="host",VALUE="cdn.example.com"
+#EXT-X-MAP:URI="https://{$host}/init.mp4"
+```
+
+The tree, the document links and every rule then see `https://cdn.example.com/init.mp4` — the URI
+that will actually be requested. `IMPORT` and `QUERYPARAM` declare a name whose value arrives from
+the master or from the request, so the name counts as declared and the text is left alone.
+
+A `{$name}` nothing declares is **not** guessed at. Substitution is textual and has no error path: a
+player requests the URL with the braces still in it, and `syntax/undefined-variable` reports it on
+the line that uses it. Otherwise the only clue is a 404 for a hostname with a `{` in it.
+
 ## The timeline
 
 `HLS Lens: Show Timeline` opens a panel beside the manifest with the segments drawn as a strip. On a

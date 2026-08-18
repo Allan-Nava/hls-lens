@@ -106,13 +106,11 @@ The picture the rules could not draw.
 
 - [x] **HL-12 — Timeline webview**: `src/core/timeline.ts` lays the segments of one or more playlists on a shared axis — `buildTimeline`, `niceTicks` and `renderTimelineHtml`, which renders the **whole page** as a string, so a webview gets tests instead of a screenshot. Discontinuities, `EXT-X-GAP` segments and the ad breaks an `EXT-X-DATERANGE` declares are marked, the rungs are stacked, and a boundary not every rung shares is drawn as a dashed rule across all of them. Only the rung that drifts is called out of step — with one rung out of five it is that rung that is wrong, not the four that agree. Clicking a segment reveals its line. `HLS Lens: Show Timeline` draws a media playlist; on a master it reads the rungs first.
 
-## The rest of the vocabulary
+## v0.12.0 — The rest of the vocabulary
 
-Four tags the parser knows and the hover documents that **no rule reads at all** — `EXT-X-DEFINE`,
-`EXT-X-SESSION-DATA`, `EXT-X-CONTENT-STEERING`, `EXT-X-START` — plus `EXT-X-SESSION-KEY`, which today
-only rides along with `EXT-X-KEY` in the key rules. Each one is a URI or a start position a player
-acts on, so what is wrong with it is wrong at the very first request.
+Six rules on the four tags nothing was reading, and the variable substitution the
+parser was missing. 67 → 73.
 
-- [ ] **HL-25 — `EXT-X-DEFINE` and the variables that use it**: a `{$name}` reference in a URI that no `EXT-X-DEFINE` declares (the URI is requested with the braces still in it), an `EXT-X-DEFINE` with neither `VALUE` nor `IMPORT` nor `QUERYPARAM`, and an `IMPORT` in a playlist that has no master to import from. Needs the substitution in the parser, which is where a resolved URI belongs.
-- [ ] **HL-26 — `EXT-X-SESSION-DATA` and `EXT-X-SESSION-KEY`**: session data with neither `VALUE` nor `URI`, two entries sharing `DATA-ID` and `LANGUAGE`, and a session key whose `METHOD` or `KEYFORMAT` disagrees with the `EXT-X-KEY` of the renditions it pre-announces — the tag exists to save the player a fetch, and a wrong answer is worse than no answer.
-- [ ] **HL-27 — `EXT-X-CONTENT-STEERING` and `EXT-X-START`**: steering with no `SERVER-URI`, a `PATHWAY-ID` no variant declares, and a `TIME-OFFSET` that lands outside the playlist — past the end on a VOD, or inside the three target durations of the live edge, where a player has nothing buffered to start on.
+- [x] **HL-25 — `syntax/define-malformed` and `syntax/undefined-variable`**: the parser now **substitutes** the variables (`Playlist.variables`, `defines`, `variableRefs`), so the rules, the tree and the document links all see the URI that will be requested. A `{$name}` nothing declares is left written as it is — braces included, which is exactly what a player asks for — and reported on the line that uses it. On the declaration side: a `NAME` with no `VALUE`, two sources for one value, the same name twice, and `IMPORT` in a master, which has nothing to import from.
+- [x] **HL-26 — `master/session-data` and `cross/session-key-mismatch`**: session data with neither `VALUE` nor `URI` (no datum) or with both (two answers), and two entries sharing `DATA-ID` and `LANGUAGE`. The session key half turned out to belong in `crosscheck.ts` and not in `master/*`: `EXT-X-SESSION-KEY` is in the master and the `EXT-X-KEY` it promises is in the renditions, so the comparison needs both files. `analyzeAcross` takes an optional `master` for it.
+- [x] **HL-27 — `master/content-steering` and `media/start-offset`**: steering with no `SERVER-URI`, a second steering tag, and a `PATHWAY-ID` no variant belongs to. `EXT-X-START` with no `TIME-OFFSET`, an offset outside the playlist (where players fall back to their own default, so the tag does nothing), and a negative offset inside the three target durations a player buffers before it starts.

@@ -2,7 +2,7 @@
 
 # Rules
 
-HLS Lens ships 67 rules. Most read one manifest — the claims it makes — and point at the line you have to fix;
+HLS Lens ships 73 rules. Most read one manifest — the claims it makes — and point at the line you have to fix;
 the `cross/*` rules read the master and its renditions together and report on the variant line of the master.
 For the defects that need the segment bytes (a gap that no `EXT-X-DISCONTINUITY` declares, a 1080p rung that codes 720p),
 run the deep check, which brings [segcheck](https://github.com/Allan-Nava/segcheck) findings into the same Problems panel.
@@ -55,6 +55,12 @@ Ids are stable: they are what `hlsLens.diagnostics.skip` pins.
 | [`media/rendition-report`](#mediarendition-report) | error | Rendition reports name a rendition and a position |
 | [`media/rendition-report-out-of-step`](#mediarendition-report-out-of-step) | warning | Rendition reports are level with the playlist that carries them |
 | [`media/rendition-report-missing`](#mediarendition-report-missing) | hint | A low-latency playlist reports the other renditions |
+| [`syntax/define-malformed`](#syntaxdefine-malformed) | error | Every EXT-X-DEFINE declares exactly one variable, once |
+| [`syntax/undefined-variable`](#syntaxundefined-variable) | error | Every {$name} is a variable something declares |
+| [`master/session-data`](#mastersession-data) | error | Session data carries one value under an id it does not share |
+| [`master/content-steering`](#mastercontent-steering) | error | Content steering points somewhere, once, at a pathway that exists |
+| [`media/start-offset`](#mediastart-offset) | warning | EXT-X-START lands inside the playlist |
+| [`cross/session-key-mismatch`](#crosssession-key-mismatch) | warning | The session key matches the keys the renditions use |
 | [`media/gap-segments`](#mediagap-segments) | warning | The playlist has no EXT-X-GAP segments |
 | [`media/short-live-window`](#mediashort-live-window) | warning | A live playlist holds at least three target durations |
 | [`media/plaintext-segment`](#mediaplaintext-segment) | warning | Segments are addressed over HTTPS |
@@ -115,6 +121,18 @@ Players must ignore tags they do not recognise, so a typo like EXT-X-TARGETDURAT
 **EXT-X-VERSION covers the tags the playlist uses** · error
 
 The compatibility version tells a player what it must understand. Declaring less than the playlist uses is how a stream plays on your desk and fails on a TV app that honours the declared version.
+
+### `syntax/define-malformed`
+
+**Every EXT-X-DEFINE declares exactly one variable, once** · error
+
+A NAME with no VALUE, two ways of giving the same variable a value, or the same name defined twice all leave a player to choose — and the choice lands in a URI, so the wrong one is a request to the wrong host. IMPORT takes its value from the multivariant playlist, so it has nothing to import in a master.
+
+### `syntax/undefined-variable`
+
+**Every {$name} is a variable something declares** · error
+
+Substitution is textual and there is no error path: a reference nothing declares stays in the URI exactly as written, braces included, and the player requests it that way. The 404 names a host with a { in it, which is the one clue that this is what happened.
 
 ## Master playlist
 
@@ -203,6 +221,18 @@ An H.264 level caps the frame size and the macroblock rate. A rung that advertis
 **Consecutive rungs are far enough apart, and not too far** · hint
 
 Rungs less than about 1.5x apart in bitrate are indistinguishable to ABR: it pays for a second encode and a second cache entry that no switching decision can use. A gap wider than about 2.5x is the opposite problem — when the connection cannot hold the upper rung there is nothing to fall back to except a much worse picture.
+
+### `master/session-data`
+
+**Session data carries one value under an id it does not share** · error
+
+EXT-X-SESSION-DATA exists so a player can read metadata without loading a rendition. With neither VALUE nor URI there is no datum; with both there are two answers; and two entries sharing DATA-ID and LANGUAGE make which one a player reads arbitrary.
+
+### `master/content-steering`
+
+**Content steering points somewhere, once, at a pathway that exists** · error
+
+Steering is what moves traffic between CDNs during playback. Without SERVER-URI there is nothing to poll, a second tag makes the pathway a player starts on arbitrary, and a PATHWAY-ID no variant declares steers every player onto a pathway with no renditions in it.
 
 ## Media playlist
 
@@ -340,6 +370,12 @@ A report several segments behind this playlist means the rungs are not being pub
 
 Without a rendition report, a player switching rungs has to fetch the other playlist before it can request anything from it. That round trip at the live edge is exactly what the low-latency tags were added to remove.
 
+### `media/start-offset`
+
+**EXT-X-START lands inside the playlist** · warning
+
+TIME-OFFSET is where playback begins. Past the end of the playlist a player falls back to its own default, so the tag does nothing; and a negative offset inside the three target durations a player buffers puts the start point where there is not yet enough media to play.
+
 ### `media/gap-segments`
 
 **The playlist has no EXT-X-GAP segments** · warning
@@ -385,6 +421,12 @@ EXT-X-I-FRAMES-ONLY exists so a player can fetch single frames while scrubbing. 
 ## Across playlists
 
 Rules that need the master and its renditions at once, from `HLS Lens: Check Renditions Together`. Every rendition is a valid playlist on its own; these are the ways they can disagree with each other.
+
+### `cross/session-key-mismatch`
+
+**The session key matches the keys the renditions use** · warning
+
+EXT-X-SESSION-KEY exists to let a player fetch the content key while it is still reading the master, instead of stalling on the first segment. A session key whose METHOD or KEYFORMAT no rendition uses is a fetch spent on a key that decrypts nothing — the stall it was meant to remove, plus a request.
 
 ### `cross/version-mismatch`
 

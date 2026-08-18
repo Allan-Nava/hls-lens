@@ -437,6 +437,54 @@ export const RULES: RuleDoc[] = [
       'Without a rendition report, a player switching rungs has to fetch the other playlist before it can request anything from it. That round trip at the live edge is exactly what the low-latency tags were added to remove.',
   },
   {
+    id: 'syntax/define-malformed',
+    severity: 'error',
+    scope: 'syntax',
+    title: 'Every EXT-X-DEFINE declares exactly one variable, once',
+    rationale:
+      'A NAME with no VALUE, two ways of giving the same variable a value, or the same name defined twice all leave a player to choose — and the choice lands in a URI, so the wrong one is a request to the wrong host. IMPORT takes its value from the multivariant playlist, so it has nothing to import in a master.',
+  },
+  {
+    id: 'syntax/undefined-variable',
+    severity: 'error',
+    scope: 'syntax',
+    title: 'Every {$name} is a variable something declares',
+    rationale:
+      'Substitution is textual and there is no error path: a reference nothing declares stays in the URI exactly as written, braces included, and the player requests it that way. The 404 names a host with a { in it, which is the one clue that this is what happened.',
+  },
+  {
+    id: 'master/session-data',
+    severity: 'error',
+    scope: 'master',
+    title: 'Session data carries one value under an id it does not share',
+    rationale:
+      'EXT-X-SESSION-DATA exists so a player can read metadata without loading a rendition. With neither VALUE nor URI there is no datum; with both there are two answers; and two entries sharing DATA-ID and LANGUAGE make which one a player reads arbitrary.',
+  },
+  {
+    id: 'master/content-steering',
+    severity: 'error',
+    scope: 'master',
+    title: 'Content steering points somewhere, once, at a pathway that exists',
+    rationale:
+      'Steering is what moves traffic between CDNs during playback. Without SERVER-URI there is nothing to poll, a second tag makes the pathway a player starts on arbitrary, and a PATHWAY-ID no variant declares steers every player onto a pathway with no renditions in it.',
+  },
+  {
+    id: 'media/start-offset',
+    severity: 'warning',
+    scope: 'media',
+    title: 'EXT-X-START lands inside the playlist',
+    rationale:
+      'TIME-OFFSET is where playback begins. Past the end of the playlist a player falls back to its own default, so the tag does nothing; and a negative offset inside the three target durations a player buffers puts the start point where there is not yet enough media to play.',
+  },
+  {
+    id: 'cross/session-key-mismatch',
+    severity: 'warning',
+    scope: 'cross',
+    title: 'The session key matches the keys the renditions use',
+    rationale:
+      'EXT-X-SESSION-KEY exists to let a player fetch the content key while it is still reading the master, instead of stalling on the first segment. A session key whose METHOD or KEYFORMAT no rendition uses is a fetch spent on a key that decrypts nothing — the stall it was meant to remove, plus a request.',
+  },
+  {
     id: 'media/gap-segments',
     severity: 'warning',
     scope: 'media',
@@ -672,6 +720,7 @@ const VERSION_REQUIREMENTS: Array<{ version: number; feature: string; used: (pl:
   // segments, which is the case that actually appears in the wild.
   { version: 5, feature: 'EXT-X-MAP', used: (pl) => pl.maps.length > 0 && pl.iframesOnly },
   { version: 6, feature: 'EXT-X-MAP', used: (pl) => pl.maps.length > 0 && !pl.iframesOnly },
+  { version: 8, feature: 'EXT-X-DEFINE', used: (pl) => pl.defines.length > 0 },
   {
     version: 9,
     feature: 'low-latency partial segments',
@@ -731,6 +780,8 @@ function checkSyntax(pl: Playlist, add: Add): void {
     if (req.version > declared) features.push(`${req.feature} needs ${req.version}`);
     required = Math.max(required, req.version);
   }
+  checkDefines(pl, add);
+
   if (required > declared) {
     add(
       'syntax/version-too-low',
@@ -808,6 +859,9 @@ function checkMaster(pl: Playlist, add: Add): void {
   for (const tag of pl.danglingStreamInf) {
     add('master/missing-uri', tag.line, 'this EXT-X-STREAM-INF is not followed by a variant playlist URI', 'put the variant playlist URI on the next line');
   }
+
+  checkSessionData(pl, add);
+  checkContentSteering(pl, add);
 
   if (playable.length > 0 && !pl.variants.some((v) => v.iframeOnly)) {
     add('master/no-iframe-stream', 0, 'the master offers no EXT-X-I-FRAME-STREAM-INF: there is nothing to show while scrubbing', 'add an I-frame playlist for trick play');
@@ -1003,6 +1057,7 @@ function checkMedia(pl: Playlist, add: Add, pdtToleranceMs: number, slack: numbe
   }
 
   checkLowLatency(pl, add);
+  checkStart(pl, add, isLive);
 
   const gap = pl.segments.find((s) => s.gap);
   if (gap) {
@@ -1154,6 +1209,176 @@ function checkLowLatency(pl: Playlist, add: Add): void {
       'this low-latency playlist carries no EXT-X-RENDITION-REPORT',
       'report the other renditions: without it a player that switches has to fetch their playlists first, which is the round trip low latency exists to remove',
     );
+  }
+}
+
+/**
+ * checkDefines reads the variable declarations and the references to them.
+ *
+ * Substitution is textual and has no error path: whatever is not declared is
+ * requested with the braces still in it, so both halves of this — a declaration that
+ * declares nothing, and a reference to nothing — end as a URL nobody meant to fetch.
+ */
+function checkDefines(pl: Playlist, add: Add): void {
+  const declared = new Map<string, number>();
+  for (const tag of pl.defines) {
+    const name = tag.attrs.get('NAME');
+    const value = tag.attrs.get('VALUE');
+    const imported = tag.attrs.get('IMPORT');
+    const queryParam = tag.attrs.get('QUERYPARAM');
+    const has = (attr: string | undefined): boolean => attr !== undefined;
+
+    // Exactly one of: NAME with VALUE, IMPORT, QUERYPARAM.
+    const legal =
+      (has(name) && has(value) && !has(imported) && !has(queryParam)) ||
+      (has(imported) && !has(name) && !has(value) && !has(queryParam)) ||
+      (has(queryParam) && !has(name) && !has(value) && !has(imported));
+    if (!legal) {
+      const written = [has(name) ? 'NAME' : '', has(value) ? 'VALUE' : '', has(imported) ? 'IMPORT' : '', has(queryParam) ? 'QUERYPARAM' : '']
+        .filter(Boolean)
+        .join(', ');
+      add(
+        'syntax/define-malformed',
+        tag.line,
+        written === ''
+          ? 'this EXT-X-DEFINE declares nothing: it needs NAME with VALUE, or IMPORT, or QUERYPARAM'
+          : `this EXT-X-DEFINE declares ${written}: it needs NAME with VALUE, or IMPORT, or QUERYPARAM, and only one of the three`,
+        'one variable, one source for its value',
+      );
+    }
+
+    if (has(imported) && (pl.kind === 'master' || pl.kind === 'mixed')) {
+      add(
+        'syntax/define-malformed',
+        tag.line,
+        `IMPORT="${imported}" in a master playlist: IMPORT takes the value from the master that referenced this playlist, and a master has none`,
+        'declare it with NAME and VALUE here, and IMPORT it in the renditions',
+      );
+    }
+
+    const variable = name ?? imported ?? queryParam;
+    if (variable === undefined) continue;
+    const first = declared.get(variable);
+    if (first !== undefined) {
+      add(
+        'syntax/define-malformed',
+        tag.line,
+        `"${variable}" is already defined on line ${first + 1}: which value applies is the player's guess`,
+        'define each variable once',
+      );
+    } else {
+      declared.set(variable, tag.line);
+    }
+  }
+
+  const reported = new Set<string>();
+  for (const ref of pl.variableRefs) {
+    if (pl.variables.has(ref.name)) continue;
+    const key = `${ref.name}@${ref.line}`;
+    if (reported.has(key)) continue;
+    reported.add(key);
+    add(
+      'syntax/undefined-variable',
+      ref.line,
+      `{$${ref.name}} is used here and no EXT-X-DEFINE declares "${ref.name}": the braces stay in the URI a player requests`,
+      `add #EXT-X-DEFINE:NAME="${ref.name}",VALUE="…" above this line, or IMPORT it from the master`,
+    );
+  }
+}
+
+/** checkSessionData: one datum per entry, one entry per id and language. */
+function checkSessionData(pl: Playlist, add: Add): void {
+  const seen = new Map<string, number>();
+  for (const tag of pl.tags.filter((t) => t.name === 'EXT-X-SESSION-DATA')) {
+    const id = tag.attrs.get('DATA-ID') ?? '';
+    const language = tag.attrs.get('LANGUAGE') ?? '';
+    const value = tag.attrs.get('VALUE');
+    const uri = tag.attrs.get('URI');
+    const label = id ? `"${id}"` : 'this EXT-X-SESSION-DATA';
+
+    if (!id) {
+      add('master/session-data', tag.line, 'this EXT-X-SESSION-DATA declares no DATA-ID, which the spec requires', 'add DATA-ID as a reverse-DNS identifier');
+    }
+    if ((value === undefined) === (uri === undefined)) {
+      add(
+        'master/session-data',
+        tag.line,
+        value === undefined ? `${label} declares neither VALUE nor URI: there is no datum` : `${label} declares both VALUE and URI: a player has two answers to one question`,
+        'give exactly one of VALUE and URI',
+      );
+    }
+
+    const key = `${id}\u0000${language}`;
+    const first = seen.get(key);
+    if (first !== undefined) {
+      add(
+        'master/session-data',
+        tag.line,
+        `${label}${language ? ` in ${language}` : ''} is already declared on line ${first + 1}`,
+        'LANGUAGE is what lets the same DATA-ID appear twice; without it, once',
+      );
+    } else {
+      seen.set(key, tag.line);
+    }
+  }
+}
+
+/** checkContentSteering: one steering server, and a pathway that has renditions. */
+function checkContentSteering(pl: Playlist, add: Add): void {
+  const steering = pl.tags.filter((t) => t.name === 'EXT-X-CONTENT-STEERING');
+  if (steering.length === 0) return;
+
+  for (const extra of steering.slice(1)) {
+    add(
+      'master/content-steering',
+      extra.line,
+      `a second EXT-X-CONTENT-STEERING; the first is on line ${steering[0].line + 1}`,
+      'the spec allows one per playlist: with two, which pathway a player starts on is arbitrary',
+    );
+  }
+
+  const first = steering[0];
+  if (!first.attrs.get('SERVER-URI')) {
+    add('master/content-steering', first.line, 'this EXT-X-CONTENT-STEERING declares no SERVER-URI: there is no steering manifest to poll', 'add SERVER-URI');
+  }
+
+  const pathway = first.attrs.get('PATHWAY-ID');
+  const pathways = new Set(pl.variants.map((v) => v.attrs.get('PATHWAY-ID')).filter((p): p is string => p !== undefined));
+  if (pathway !== undefined && pathways.size > 0 && !pathways.has(pathway)) {
+    add(
+      'master/content-steering',
+      first.line,
+      `PATHWAY-ID="${pathway}" is the pathway to start on and no variant belongs to it (the master declares ${[...pathways].map((p) => `"${p}"`).join(', ')})`,
+      'start on a pathway that has renditions, or tag the variants with this one',
+    );
+  }
+}
+
+/** checkStart: where playback begins, against how much playlist there is. */
+function checkStart(pl: Playlist, add: Add, isLive: boolean): void {
+  for (const tag of pl.tags.filter((t) => t.name === 'EXT-X-START')) {
+    const offset = attrFloat(tag.attrs, 'TIME-OFFSET');
+    if (offset === null) {
+      add('media/start-offset', tag.line, 'this EXT-X-START declares no TIME-OFFSET, the one attribute it requires', 'add TIME-OFFSET in seconds, negative to measure from the live edge');
+      continue;
+    }
+    if (pl.totalDuration > 0 && Math.abs(offset) > pl.totalDuration) {
+      add(
+        'media/start-offset',
+        tag.line,
+        `TIME-OFFSET is ${offset}s and the playlist holds ${pl.totalDuration}s: the start point is outside it`,
+        'players fall back to their own default, so the tag does nothing at all',
+      );
+      continue;
+    }
+    if (isLive && offset < 0 && pl.targetDuration !== null && Math.abs(offset) < 3 * pl.targetDuration) {
+      add(
+        'media/start-offset',
+        tag.line,
+        `TIME-OFFSET is ${offset}s, inside the three target durations (${3 * pl.targetDuration}s) a player buffers before it starts`,
+        'start further back from the live edge: there is not enough media between that point and the edge to play',
+      );
+    }
   }
 }
 

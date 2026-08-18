@@ -117,6 +117,13 @@ export interface Playlist {
   mediaSequence: number | null;
   discontinuitySequence: number | null;
 
+  /** EXT-X-DEFINE tags, in the order the playlist writes them. */
+  defines: Tag[];
+  /** Variables in scope: the value, or null when it arrives from IMPORT/QUERYPARAM. */
+  variables: Map<string, string | null>;
+  /** Every {$name} the playlist uses, with the line it uses it on. */
+  variableRefs: Array<{ name: string; line: number }>;
+
   serverControl: Attrs | null;
   serverControlLine: number | null;
   partTarget: number | null;
@@ -243,6 +250,9 @@ export function parsePlaylist(text: string): Playlist {
     independentSegments: false,
     mediaSequence: null,
     discontinuitySequence: null,
+    defines: [],
+    variables: new Map<string, string | null>(),
+    variableRefs: [],
     serverControl: null,
     serverControlLine: null,
     partTarget: null,
@@ -278,6 +288,23 @@ export function parsePlaylist(text: string): Playlist {
       const tag = parseTag(line, i);
       pl.tags.push(tag);
       if (!KNOWN_TAGS.has(tag.name)) pl.unknownTags.push(tag);
+
+      // Variables are substituted on the way in, so everything downstream — the
+      // rules, the tree, the document links — sees the URI that will be requested.
+      // EXT-X-DEFINE is exempt: it is what declares them, and a variable cannot
+      // define itself. A name that is not in scope yet is left as it is written,
+      // which is also what a player would request.
+      if (tag.name === 'EXT-X-DEFINE') {
+        pl.defines.push(tag);
+        declareVariable(pl, tag);
+      } else if (ATTRIBUTE_TAGS.has(tag.name)) {
+        for (const [key, value] of tag.attrs) {
+          const substituted = substituteVariables(value, pl, i);
+          if (substituted !== value) tag.attrs.set(key, substituted);
+        }
+      } else {
+        tag.value = substituteVariables(tag.value, pl, i);
+      }
 
       switch (tag.name) {
         case 'EXTM3U':
@@ -373,14 +400,15 @@ export function parsePlaylist(text: string): Playlist {
     }
 
     // A URI line closes whatever tag was pending.
+    const uri = substituteVariables(line, pl, i);
     if (pendingStreamInf) {
-      pl.variants.push(readVariant(pendingStreamInf, line, i, false));
+      pl.variants.push(readVariant(pendingStreamInf, uri, i, false));
       pendingStreamInf = null;
       continue;
     }
     if (pendingExtinf) {
       pl.segments.push({
-        uri: line,
+        uri,
         uriLine: i,
         extinfLine: pendingExtinf.tag.line,
         duration: pendingExtinf.duration,
@@ -447,6 +475,40 @@ function readVariant(tag: Tag, uri: string, uriLine: number, iframeOnly: boolean
     closedCaptions: tag.attrs.get('CLOSED-CAPTIONS') ?? null,
     iframeOnly,
   };
+}
+
+/** A {$name} reference, as RFC 8216bis §4.2 writes it. */
+const VARIABLE_RE = /\{\$([A-Za-z0-9_-]+)\}/g;
+
+/**
+ * substituteVariables replaces the variables that are in scope and records every
+ * reference it sees, in scope or not. A name nothing declares is left written as it
+ * is: that is the URI a player would request, braces included, and pretending
+ * otherwise would hide the defect the rule exists to report.
+ */
+function substituteVariables(value: string, pl: Playlist, line: number): string {
+  if (!value.includes('{$')) return value;
+  return value.replace(VARIABLE_RE, (whole, name: string) => {
+    pl.variableRefs.push({ name, line });
+    const declared = pl.variables.get(name);
+    return declared === undefined || declared === null ? whole : declared;
+  });
+}
+
+/**
+ * declareVariable puts one EXT-X-DEFINE in scope. IMPORT and QUERYPARAM name a
+ * variable whose value this file does not hold — it comes from the master, or from
+ * the query of the request that fetched this playlist — so the name is declared with
+ * no value rather than not declared at all.
+ */
+function declareVariable(pl: Playlist, tag: Tag): void {
+  const name = tag.attrs.get('NAME');
+  const value = tag.attrs.get('VALUE');
+  const imported = tag.attrs.get('IMPORT');
+  const queryParam = tag.attrs.get('QUERYPARAM');
+  if (name !== undefined && value !== undefined) pl.variables.set(name, value);
+  else if (imported !== undefined) pl.variables.set(imported, null);
+  else if (queryParam !== undefined) pl.variables.set(queryParam, null);
 }
 
 function readPart(tag: Tag): Part {

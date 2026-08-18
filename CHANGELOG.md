@@ -3,6 +3,25 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.12.0] - 2026-08-18
+
+Il resto del vocabolario: i quattro tag che il parser conosceva e nessuna regola guardava. 67 → **73 regole**.
+
+### Aggiunto
+
+- **Le variabili vengono sostituite nel parser** (`Playlist.variables`, `defines`, `variableRefs`): un `{$name}` si risolve mentre si legge, quindi l'albero, i document link e tutte le regole vedono l'URI che verrà **davvero richiesto**. `IMPORT` e `QUERYPARAM` dichiarano il nome anche se il valore arriva dopo (dal master, o dalla query della richiesta), quindi il nome conta come dichiarato e il testo resta com'è.
+- **`syntax/undefined-variable`** (error): un `{$name}` che nessun `EXT-X-DEFINE` dichiara. La sostituzione è testuale e **non ha un percorso d'errore**: il riferimento resta nell'URI graffe incluse e il player lo chiede così. Il 404 nomina un host con una `{` dentro, e quello è l'unico indizio — quindi il finding punta alla riga che lo usa, non al tag che avrebbe dovuto dichiararlo. Per lo stesso motivo l'URI **non** viene ripulito: sostituire un placeholder vuoto nasconderebbe il difetto.
+- **`syntax/define-malformed`** (error): un `NAME` senza `VALUE` (non dichiara niente), due sorgenti per lo stesso valore, lo stesso nome definito due volte, e `IMPORT` in un master — `IMPORT` prende il valore dal master che ha referenziato la playlist, e un master non ne ha uno.
+- **`master/session-data`** (error): `EXT-X-SESSION-DATA` senza `VALUE` né `URI` (nessun dato) o con entrambi (due risposte alla stessa domanda), e due voci che condividono `DATA-ID` e `LANGUAGE`. Lo stesso `DATA-ID` in due lingue è il senso di `LANGUAGE`, non un duplicato.
+- **`master/content-steering`** (error): steering senza `SERVER-URI`, un secondo `EXT-X-CONTENT-STEERING`, e un `PATHWAY-ID` a cui nessuna variant appartiene — un player instradato su un pathway senza rendition dentro.
+- **`media/start-offset`** (warning): `EXT-X-START` senza `TIME-OFFSET`, un offset fuori dalla playlist (il player torna al proprio default, quindi il tag non fa niente) e un offset negativo **dentro** le tre target duration che un player bufferizza prima di partire.
+- **`cross/session-key-mismatch`** (warning): un `EXT-X-SESSION-KEY` il cui `METHOD`/`KEYFORMAT` nessuna rendition usa. Il tag esiste per far scaricare la chiave mentre il player legge ancora il master, invece di stallare sul primo segmento: pre-caricare quella sbagliata è lo stallo di prima più una richiesta.
+- **`EXT-X-DEFINE` entra in `VERSION_REQUIREMENTS`** (versione 8).
+
+### Modificato
+
+- **`analyzeAcross` accetta un `master` opzionale.** La metà "session key" di HL-26 sembrava una regola `master/*` e non lo era: `EXT-X-SESSION-KEY` sta nel master e l'`EXT-X-KEY` che promette sta nelle rendition, quindi il confronto vuole entrambi i file. Tutte le altre regole cross confrontano rendition con rendition e il master non lo vedono.
+
 ## [0.11.1] - 2026-08-18
 
 L'icona dice anche di cosa è fatta la scala.
@@ -234,6 +253,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.12.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.12.0
 [0.11.1]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.11.1
 [0.11.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.11.0
 [0.10.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.10.0
