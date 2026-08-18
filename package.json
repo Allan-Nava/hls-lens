@@ -2,7 +2,7 @@
   "name": "hls-lens",
   "displayName": "HLS Lens",
   "description": "Read HLS manifests in VS Code: inline diagnostics on m3u8 playlists, the bitrate ladder as a tree, and a deep segment check with segcheck.",
-  "version": "0.10.0",
+  "version": "0.11.0",
   "publisher": "allannava95",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -93,13 +93,13 @@
     "viewsWelcome": [
       {
         "view": "hlsLens.explorer",
-        "contents": "No HLS manifest open.\nOpen an .m3u8 file, or fetch one from a URL.\n\n[Open manifest URL\u2026](command:hlsLens.openUrl)"
+        "contents": "No HLS manifest open.\nOpen an .m3u8 file, or fetch one from a URL.\n\n[Open manifest URL…](command:hlsLens.openUrl)"
       }
     ],
     "commands": [
       {
         "command": "hlsLens.openUrl",
-        "title": "HLS Lens: Open Manifest URL\u2026",
+        "title": "HLS Lens: Open Manifest URL…",
         "icon": "$(cloud-download)"
       },
       {
@@ -140,6 +140,11 @@
         "title": "HLS Lens: Deep Check This Rendition"
       },
       {
+        "command": "hlsLens.showTimeline",
+        "title": "HLS Lens: Show Timeline",
+        "icon": "$(graph-line)"
+      },
+      {
         "command": "hlsLens.showRules",
         "title": "HLS Lens: Show Rule Reference"
       }
@@ -162,14 +167,19 @@
           "group": "navigation@3"
         },
         {
-          "command": "hlsLens.watch",
+          "command": "hlsLens.showTimeline",
           "when": "view == hlsLens.explorer",
           "group": "navigation@4"
         },
         {
-          "command": "hlsLens.refresh",
+          "command": "hlsLens.watch",
           "when": "view == hlsLens.explorer",
           "group": "navigation@5"
+        },
+        {
+          "command": "hlsLens.refresh",
+          "when": "view == hlsLens.explorer",
+          "group": "navigation@6"
         }
       ],
       "view/item/context": [

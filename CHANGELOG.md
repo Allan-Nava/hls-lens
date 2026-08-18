@@ -3,6 +3,22 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.11.0] - 2026-08-18
+
+La timeline: la cosa che le regole potevano solo dire, disegnata.
+
+### Aggiunto
+
+- **`src/core/timeline.ts`** e il comando **`HLS Lens: Show Timeline`**: i segmenti come striscia, e su un master le rendition **impilate su un unico asse**. Su una media playlist disegna quella; su un master legge prima i rung (da disco o dal CDN, come `Check Renditions Together`).
+  - `buildTimeline` mette i segmenti in fila e marca discontinuità, `EXT-X-GAP` e gli **ad break** dichiarati da un `EXT-X-DATERANGE`. Gli ad break li disegna **solo** se la playlist ha un `EXT-X-PROGRAM-DATE-TIME` che li ancora: un `DATERANGE` è agganciato al wall clock, e senza niente che leghi la timeline dei media a quell'orologio non c'è nulla da convertire. Un ad break indovinato in un'immagine è peggio di nessun ad break, perché un'immagine sembra un fatto.
+  - Le **boundary che non tutti i rung condividono** diventano righe tratteggiate che attraversano tutte le tracce. Fuori passo si chiama la **minoranza** del cluster: con un rung su cinque che mette la boundary altrove è quel rung a essere sbagliato, e segnalarli tutti e cinque lo nasconderebbe. Prima scrivevo il contrario e un test su tre rendition l'ha bocciato.
+  - `renderTimelineHtml` rende **tutta la pagina** come stringa, nel core. È il motivo per cui una webview finisce per avere dei test invece di uno screenshot: la glue crea il pannello, setta l'html e ritrasforma un click in una riga da rivelare. `niceTicks` sceglie il passo dell'asse fra valori tondi — un tick ogni 6,4 secondi è aritmeticamente corretto e illeggibile.
+  - La pagina non carica **niente**: CSP `default-src 'none'`, `localResourceRoots: []`, nessun font, nessuno script esterno. Il nonce lo passa la glue, non il core: `renderTimelineHtml` deve restare deterministico per essere testabile.
+
+### Corretto
+
+- La nota di `0.9.1` diceva che la sezione tematica svuotata `## Rules that pay for themselves` restava nel `BACKLOG.md`: **non c'era già più**, l'avevo rimossa nello stesso commit sostituendola con `## Low latency`. Ora le sezioni tematiche svuotate si togliono, e le milestone che restano indietro le elenca il sync.
+
 ## [0.10.0] - 2026-08-18
 
 Low latency. 58 → **67 regole**, e il parser che smette di limitarsi a contare le parti.

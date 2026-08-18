@@ -5,6 +5,7 @@
 // translates between that model and the editor, and is deliberately thin.
 import * as vscode from 'vscode';
 import { spawn } from 'child_process';
+import { randomBytes } from 'crypto';
 
 import { analyze, Finding, RULES, Severity } from './core/analyze';
 import { buildLadder, LadderRow, ladderSummary, renditionRows } from './core/ladder';
@@ -16,6 +17,7 @@ import { quickFixesFor } from './core/fixes';
 import { analyzeAcross, LoadedRendition } from './core/crosscheck';
 import { describeChange, diffPlaylists, watchIntervalMs } from './core/watch';
 import { analyzeMpd } from './core/dash';
+import { buildTimeline, renderTimelineHtml, TimelineTrack } from './core/timeline';
 import { isRemote, looksLikePlaylistUri, resolveUri } from './core/uri';
 
 /** Scheme of the read-only documents holding manifests fetched from a URL. */
@@ -104,6 +106,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('hlsLens.checkTogether', () => checkTogether()),
     vscode.commands.registerCommand('hlsLens.deepCheckVariant', (node?: TreeNode) => deepCheckVariant(node)),
     vscode.commands.registerCommand('hlsLens.watch', () => toggleWatch()),
+    vscode.commands.registerCommand('hlsLens.showTimeline', () => showTimeline()),
   );
 
   for (const doc of vscode.workspace.textDocuments) updateDiagnostics(doc);
@@ -755,6 +758,85 @@ async function checkTogether(): Promise<void> {
       ? `HLS Lens: ${loaded.length} renditions agree${skipped}.`
       : `HLS Lens: ${kept.length} finding(s) across ${loaded.length} renditions${skipped}.`,
   );
+}
+
+/** HL-12: the segments as a strip, and the renditions stacked on one axis. */
+let timelinePanel: vscode.WebviewPanel | undefined;
+
+async function showTimeline(): Promise<void> {
+  const active = activeManifest();
+  if (!active) {
+    void vscode.window.showWarningMessage('HLS Lens: open a playlist first.');
+    return;
+  }
+
+  const tracks: TimelineTrack[] = [];
+  const variants = active.playlist.variants.filter((v) => !v.iframeOnly && v.uri);
+  if (active.playlist.segments.length > 0) {
+    tracks.push({ label: nameOf(active.location), playlist: active.playlist });
+  } else if (variants.length > 0) {
+    const config = vscode.workspace.getConfiguration('hlsLens');
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'HLS Lens: reading the renditions', cancellable: true },
+      async (progress, token) => {
+        for (const [index, variant] of variants.entries()) {
+          if (token.isCancellationRequested) return;
+          progress.report({ message: `${index + 1}/${variants.length} ${variant.uri}`, increment: 100 / variants.length });
+          const resolved = resolveUri(active.location, variant.uri);
+          try {
+            const text = isRemote(resolved)
+              ? (
+                  await fetchText(resolved, {
+                    headers: config.get<Record<string, string>>('request.headers', {}),
+                    timeoutMs: config.get<number>('request.timeoutMs', 15000),
+                  })
+                ).text
+              : Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.file(resolved))).toString('utf8');
+            // The label is the rung, which is what an operator recognises the row by.
+            const label = variant.resolution
+              ? `${variant.resolution.height}p`
+              : variant.bandwidth !== null
+                ? `${Math.round(variant.bandwidth / 1000)} kbps`
+                : nameOf(variant.uri);
+            tracks.push({ label, playlist: parsePlaylist(text) });
+          } catch (err) {
+            output.appendLine(`could not read ${variant.uri}: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+      },
+    );
+  }
+
+  if (tracks.length === 0) {
+    void vscode.window.showWarningMessage('HLS Lens: nothing to draw — no segments here, and no rendition could be read.');
+    return;
+  }
+
+  const model = buildTimeline(tracks);
+  const html = renderTimelineHtml(model, { title: nameOf(active.location), nonce: randomBytes(16).toString('hex') });
+
+  if (!timelinePanel) {
+    timelinePanel = vscode.window.createWebviewPanel('hlsLens.timeline', 'HLS Timeline', vscode.ViewColumn.Beside, {
+      enableScripts: true,
+      // Nothing is loaded from disk: the page is one string, built in the core.
+      localResourceRoots: [],
+    });
+    timelinePanel.onDidDispose(() => {
+      timelinePanel = undefined;
+    });
+    timelinePanel.webview.onDidReceiveMessage((message: { type?: string; line?: number }) => {
+      if (message?.type === 'reveal' && typeof message.line === 'number') void revealLine(message.line);
+    });
+  }
+  timelinePanel.title = `HLS Timeline — ${nameOf(active.location)}`;
+  timelinePanel.webview.html = html;
+  timelinePanel.reveal(vscode.ViewColumn.Beside, true);
+}
+
+/** nameOf is the last path segment of a path or URL, for a label. */
+function nameOf(location: string): string {
+  const withoutQuery = location.split('?')[0];
+  return withoutQuery.slice(withoutQuery.lastIndexOf('/') + 1) || withoutQuery;
 }
 
 /** HL-14: the deep check pointed at one rendition picked in the tree. */

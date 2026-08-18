@@ -80,6 +80,31 @@ Nothing else is offered a fix. A missing `CODECS` string, a badly spaced ladder 
 
 Only the playable video rungs are compared. An alternate audio or subtitle rendition is legitimately segmented differently, and reporting that as drift would be a finding that is not one. A rendition that cannot be read is listed in the **HLS Lens** output channel and skipped, so one unreachable rung does not hide the others.
 
+## The timeline
+
+`HLS Lens: Show Timeline` opens a panel beside the manifest with the segments drawn as a strip. On a
+media playlist it is that playlist; on a master it reads every playable rung first and stacks them on
+one axis, which is the only way misalignment is visible rather than inferred.
+
+| On the strip | What it means |
+|---|---|
+| a bar | one segment, as wide as its `EXTINF` share of the longest track |
+| an orange edge | an `EXT-X-DISCONTINUITY` precedes the segment |
+| a hatched bar | `EXT-X-GAP`: the packager published a hole |
+| a purple bar | the segment falls inside an ad break an `EXT-X-DATERANGE` declares |
+| a dashed rule | a boundary that not every rung shares |
+
+Clicking a segment reveals its line in the manifest.
+
+Ad breaks are only drawn when the playlist carries an `EXT-X-PROGRAM-DATE-TIME`: a `DATERANGE` is
+anchored to the wall clock, and with nothing to tie the media timeline to it there is nothing to
+convert. A guessed ad break in a picture is worse than none, because a picture looks like a fact.
+
+When several rungs disagree, the rows called *out of step* are the minority — with one rung out of
+five putting a boundary somewhere else, it is that rung that is wrong, and flagging all five would
+hide it. `HLS Lens: Check Renditions Together` is the same disagreement as findings on lines; this is
+the same disagreement as a shape.
+
 ## Low-latency playlists
 
 A low-latency playlist is a promise a player acts on *before* the media exists: it blocks on a

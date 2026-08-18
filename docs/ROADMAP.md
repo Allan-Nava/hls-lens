@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**24 of 25 items done** · `█████████░` 96%
+**25 of 28 items done** · `████████░░` 89%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -22,7 +22,8 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [v0.8.0 — DASH](#v080--dash) | ✅ shipped | 1/1 |
 | [v0.9.0 — Documentation site](#v090--documentation-site) | ✅ shipped | 1/1 |
 | [v0.10.0 — Low latency](#v0100--low-latency) | ✅ shipped | 4/4 |
-| [More than one file at a time](#more-than-one-file-at-a-time) | ⏳ planned | 0/1 |
+| [v0.11.0 — Timeline](#v0110--timeline) | ✅ shipped | 1/1 |
+| [The rest of the vocabulary](#the-rest-of-the-vocabulary) | ⏳ planned | 0/3 |
 
 ## v0.1.0 — Reading manifests
 
@@ -124,10 +125,20 @@ Nine rules on the half of the vocabulary nothing was reading. 58 → 67.
 - [x] **HL-23 — `media/preload-hint` and `media/preload-hint-not-preloading`**: a hint with no `TYPE` or `URI` and a second hint of the same type are spec violations (error); a hint for a part the playlist already publishes, or a `TYPE=PART` hint where there are no parts, buys nothing (warning). Split for the same reason as HL-21.
 - [x] **HL-24 — `media/rendition-report`, `media/rendition-report-out-of-step`, `media/rendition-report-missing`**: a report with no `URI` or no `LAST-MSN` is not enough to switch on; a report more than one segment from this playlist's own last media sequence means the rungs are not being published in step; a low-latency playlist with no report at all makes a switching player fetch the other playlist first — the round trip low latency exists to remove.
 
-## More than one file at a time
+## v0.11.0 — Timeline
 
-Everything that needs the master and its variants together, or the same playlist over time.
+The picture the rules could not draw.
 
-⏳ planned · 0 of 1 · `░░░░░░░░░░`
+✅ shipped · 1 of 1 · `██████████`
 
-- [ ] **HL-12 — Timeline webview**: segments as a strip with discontinuities, gaps and ad breaks marked, and the renditions stacked to show whether they are aligned.
+- [x] **HL-12 — Timeline webview**: `src/core/timeline.ts` lays the segments of one or more playlists on a shared axis — `buildTimeline`, `niceTicks` and `renderTimelineHtml`, which renders the **whole page** as a string, so a webview gets tests instead of a screenshot. Discontinuities, `EXT-X-GAP` segments and the ad breaks an `EXT-X-DATERANGE` declares are marked, the rungs are stacked, and a boundary not every rung shares is drawn as a dashed rule across all of them. Only the rung that drifts is called out of step — with one rung out of five it is that rung that is wrong, not the four that agree. Clicking a segment reveals its line. `HLS Lens: Show Timeline` draws a media playlist; on a master it reads the rungs first.
+
+## The rest of the vocabulary
+
+Four tags the parser knows and the hover documents that **no rule reads at all** — `EXT-X-DEFINE`, `EXT-X-SESSION-DATA`, `EXT-X-CONTENT-STEERING`, `EXT-X-START` — plus `EXT-X-SESSION-KEY`, which today only rides along with `EXT-X-KEY` in the key rules. Each one is a URI or a start position a player acts on, so what is wrong with it is wrong at the very first request.
+
+⏳ planned · 0 of 3 · `░░░░░░░░░░`
+
+- [ ] **HL-25 — `EXT-X-DEFINE` and the variables that use it**: a `{$name}` reference in a URI that no `EXT-X-DEFINE` declares (the URI is requested with the braces still in it), an `EXT-X-DEFINE` with neither `VALUE` nor `IMPORT` nor `QUERYPARAM`, and an `IMPORT` in a playlist that has no master to import from. Needs the substitution in the parser, which is where a resolved URI belongs.
+- [ ] **HL-26 — `EXT-X-SESSION-DATA` and `EXT-X-SESSION-KEY`**: session data with neither `VALUE` nor `URI`, two entries sharing `DATA-ID` and `LANGUAGE`, and a session key whose `METHOD` or `KEYFORMAT` disagrees with the `EXT-X-KEY` of the renditions it pre-announces — the tag exists to save the player a fetch, and a wrong answer is worse than no answer.
+- [ ] **HL-27 — `EXT-X-CONTENT-STEERING` and `EXT-X-START`**: steering with no `SERVER-URI`, a `PATHWAY-ID` no variant declares, and a `TIME-OFFSET` that lands outside the playlist — past the end on a VOD, or inside the three target durations of the live edge, where a player has nothing buffered to start on.

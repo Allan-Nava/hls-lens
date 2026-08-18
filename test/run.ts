@@ -19,6 +19,7 @@ import { diffPlaylists, describeChange, watchIntervalMs } from '../src/core/watc
 import { parseXml, findAll, attr } from '../src/core/xml';
 import { parseIsoDuration, analyzeMpd } from '../src/core/dash';
 import { frontMatter, renderMarkdown, renderPage, pageTitle } from '../src/core/markdown';
+import { buildTimeline, niceTicks, renderTimelineHtml } from '../src/core/timeline';
 import { analyze, RULES, Finding, Severity } from '../src/core/analyze';
 import { buildLadder, renditionRows, ladderSummary, formatBandwidth, formatResolution } from '../src/core/ladder';
 import { resolveUri, baseOf, isRemote, isPlainHttp, looksLikePlaylistUri } from '../src/core/uri';
@@ -1615,6 +1616,116 @@ async function main(): Promise<void> {
     altered[(64 * size + 64) * 4] ^= 0xff;
     const diff = comparePixels(decodePng(encodePng(altered, size, size)).rgba, rgba);
     assert.deepStrictEqual(diff, { differing: 1, firstPixel: 64 * size + 64 });
+  });
+
+  // ------------------------------------------------------------------ timeline
+  await test('buildTimeline lays the segments end to end and keeps their marks', () => {
+    const text =
+      '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n' +
+      '#EXTINF:6.000,\na.ts\n' +
+      '#EXT-X-DISCONTINUITY\n#EXTINF:4.000,\nb.ts\n' +
+      '#EXT-X-GAP\n#EXTINF:6.000,\nc.ts\n#EXT-X-ENDLIST\n';
+    const model = buildTimeline([{ label: '1080p', playlist: parsePlaylist(text) }]);
+    assert.strictEqual(model.rows.length, 1);
+    const spans = model.rows[0].spans;
+    assert.deepStrictEqual(
+      spans.map((s) => s.start),
+      [0, 6, 10],
+    );
+    assert.deepStrictEqual(
+      spans.map((s) => s.duration),
+      [6, 4, 6],
+    );
+    assert.strictEqual(spans[1].discontinuity, true);
+    assert.strictEqual(spans[2].gap, true);
+    assert.strictEqual(model.duration, 16);
+    // The line is the EXTINF's own, so clicking a bar can reveal it in the editor.
+    assert.ok(parsePlaylist(text).lines[spans[1].line].startsWith('#EXTINF:4.000'));
+  });
+
+  await test('an ad break is marked on the segments its DATERANGE covers', () => {
+    const withPdt =
+      '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n' +
+      '#EXT-X-PROGRAM-DATE-TIME:2026-08-18T10:00:00.000Z\n' +
+      '#EXT-X-DATERANGE:ID="ad1",CLASS="com.example.ad",START-DATE="2026-08-18T10:00:06.000Z",DURATION=6.0,SCTE35-OUT=0xFC\n' +
+      '#EXTINF:6.000,\na.ts\n#EXTINF:6.000,\nb.ts\n#EXTINF:6.000,\nc.ts\n#EXT-X-ENDLIST\n';
+    const marked = buildTimeline([{ label: '720p', playlist: parsePlaylist(withPdt) }]).rows[0].spans;
+    assert.deepStrictEqual(
+      marked.map((s) => s.ad),
+      [false, true, false],
+    );
+
+    // Without a wall clock there is nothing to anchor the range to, so nothing is
+    // marked: a guessed ad break is worse than none.
+    const noPdt = withPdt
+      .split('\n')
+      .filter((l) => !l.startsWith('#EXT-X-PROGRAM-DATE-TIME'))
+      .join('\n');
+    const unmarked = buildTimeline([{ label: '720p', playlist: parsePlaylist(noPdt) }]).rows[0].spans;
+    assert.deepStrictEqual(
+      unmarked.map((s) => s.ad),
+      [false, false, false],
+    );
+  });
+
+  await test('rows that do not share their boundaries are reported as misaligned', () => {
+    const even = '#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000,\na.ts\n#EXTINF:6.000,\nb.ts\n#EXT-X-ENDLIST\n';
+    const odd = '#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:5.000,\na.ts\n#EXTINF:7.000,\nb.ts\n#EXT-X-ENDLIST\n';
+    const together = buildTimeline([
+      { label: '1080p', playlist: parsePlaylist(even) },
+      { label: '720p', playlist: parsePlaylist(odd) },
+    ]);
+    assert.deepStrictEqual(together.misaligned, [5, 6]);
+    assert.ok(!together.rows[0].aligned);
+    assert.ok(!together.rows[1].aligned);
+
+    const same = buildTimeline([
+      { label: '1080p', playlist: parsePlaylist(even) },
+      { label: '720p', playlist: parsePlaylist(even) },
+    ]);
+    assert.deepStrictEqual(same.misaligned, []);
+    assert.ok(same.rows.every((r) => r.aligned));
+
+    // One rendition has nothing to be out of step with.
+    assert.ok(buildTimeline([{ label: 'only', playlist: parsePlaylist(odd) }]).rows[0].aligned);
+  });
+
+  await test('only the rendition that drifts is called out of step', () => {
+    const even = '#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000,\na.ts\n#EXTINF:6.000,\nb.ts\n#EXT-X-ENDLIST\n';
+    const odd = '#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:5.000,\na.ts\n#EXTINF:7.000,\nb.ts\n#EXT-X-ENDLIST\n';
+    const model = buildTimeline([
+      { label: '1080p', playlist: parsePlaylist(even) },
+      { label: '720p', playlist: parsePlaylist(even) },
+      { label: '360p', playlist: parsePlaylist(odd) },
+    ]);
+    // Two rungs agree on the boundary at 6s and one puts it at 5s: it is that one
+    // that is wrong, and saying "all three are out of step" would hide it.
+    assert.deepStrictEqual(
+      model.rows.map((r) => r.aligned),
+      [true, true, false],
+    );
+  });
+
+  await test('the axis ticks are round numbers a person can read', () => {
+    assert.deepStrictEqual(niceTicks(60), [0, 10, 20, 30, 40, 50, 60]);
+    assert.deepStrictEqual(niceTicks(3), [0, 1, 2, 3]);
+    assert.ok(niceTicks(3600).every((t) => t % 600 === 0));
+    assert.deepStrictEqual(niceTicks(0), [0]);
+  });
+
+  await test('the timeline renders as one self-contained page', () => {
+    const text = '#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000,\na&b.ts\n#EXT-X-ENDLIST\n';
+    const model = buildTimeline([{ label: '1080p "high"', playlist: parsePlaylist(text) }]);
+    const html = renderTimelineHtml(model, { title: 'live.m3u8', nonce: 'n0nce' });
+    assert.ok(html.startsWith('<!doctype html>'));
+    assert.ok(html.includes('1080p &quot;high&quot;'), 'the label is escaped');
+    assert.ok(html.includes('a&amp;b.ts'), 'the segment URI is escaped');
+    assert.ok(html.includes('data-line="2"'), 'the bar carries the line to reveal');
+    assert.ok(html.includes('nonce="n0nce"'), 'the script is nonced');
+    // Nothing is fetched: a webview that reaches the network is a webview that
+    // leaks which manifests were opened.
+    assert.ok(!/(src|href)="https?:/.test(html), 'no external resource');
+    assert.strictEqual(html, renderTimelineHtml(model, { title: 'live.m3u8', nonce: 'n0nce' }));
   });
 
   // ------------------------------------------------------------------- backlog
