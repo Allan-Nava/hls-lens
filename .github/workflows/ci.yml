@@ -13,10 +13,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
       - run: npm ci
       - run: npm run typecheck
@@ -55,7 +55,7 @@ jobs:
         run: npm run icon:check
       - name: Package the extension
         run: npx @vscode/vsce package --no-dependencies --out hls-lens.vsix
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: vsix
           path: hls-lens.vsix
@@ -65,10 +65,10 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
       - run: npm ci
       - name: Package with the tag version
@@ -82,7 +82,7 @@ jobs:
           npx @vscode/vsce package --no-dependencies --out "hls-lens-${version}.vsix"
       # Handed to the publish job, which uploads this exact file to the stores instead of
       # repackaging: what users install is then byte-for-byte what the release attaches.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: release-vsix
           path: hls-lens-*.vsix
@@ -125,15 +125,15 @@ jobs:
       VSCE_PAT: ${{ secrets.VSCE_PAT }}
       OVSX_PAT: ${{ secrets.OVSX_PAT }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
       # vsce and ovsx come from the lockfile rather than from `npx` resolving whatever is
       # latest that day: a publish is the one job that must not change under you.
       - run: npm ci
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with:
           name: release-vsix
       - name: Locate the packaged .vsix
@@ -151,7 +151,30 @@ jobs:
           echo "::warning::VSCE_PAT is not configured — skipping the Marketplace publish. The .vsix is attached to the release; add the secret to publish on the next tag."
       - name: Publish to the VS Code Marketplace
         if: env.VSCE_PAT != ''
-        run: npx @vscode/vsce publish --no-dependencies --packagePath "${{ steps.vsix.outputs.path }}"
+        # The Marketplace API times out often enough to have already cost this
+        # repository a release: v0.11.0 failed on "Request timeout" and, because a tag
+        # is only pushed once, that version never reached anybody. Hence three
+        # attempts — and hence the "already exists" check: a timed-out request can
+        # still have been accepted, so the next attempt failing that way is success
+        # arriving late, not a failure.
+        run: |
+          for attempt in 1 2 3; do
+            if out="$(npx @vscode/vsce publish --no-dependencies --packagePath "${{ steps.vsix.outputs.path }}" 2>&1)"; then
+              echo "$out"
+              exit 0
+            fi
+            echo "$out"
+            if echo "$out" | grep -qiE "already exists|version number must"; then
+              echo "::warning::the Marketplace already has this version — an earlier attempt got through"
+              exit 0
+            fi
+            if [ "$attempt" != "3" ]; then
+              echo "::warning::vsce publish failed (attempt $attempt/3), retrying in $((attempt * 20))s"
+              sleep $((attempt * 20))
+            fi
+          done
+          echo "::error::vsce publish failed three times"
+          exit 1
       - name: Publish to Open VSX
         if: env.OVSX_PAT != ''
         # ovsx reads OVSX_PAT from the environment; passing --pat would put the token in the

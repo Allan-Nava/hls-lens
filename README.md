@@ -152,6 +152,11 @@ A missing PAT never fails the run: the `.vsix` is still built and attached to th
 is releasable before the store accounts exist. Once `VSCE_PAT` is set, **every** tag publishes — the
 project tags every commit, so bump the version deliberately.
 
+The Marketplace step retries three times. Its API times out often enough to have already cost this
+repository a release — `v0.11.0` died on `Request timeout` — and a tag is pushed once, so a
+transient failure there is a version nobody ever gets. A retry that comes back with *already exists*
+is treated as success: a request that timed out may still have been accepted.
+
 ## Roadmap
 
 [BACKLOG.md](BACKLOG.md) is the plan, and the only place work is tracked. Two things are generated

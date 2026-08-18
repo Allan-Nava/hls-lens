@@ -32,16 +32,21 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
-          node-version: "20"
+          node-version: "22"
           cache: npm
       - run: npm ci
       # The renderer is core code with tests; a build that throws must not deploy.
       - run: npm test
       - run: npm run site
       - uses: actions/configure-pages@v5
+        with:
+          # Turn Pages on rather than failing when it is off: the first deploy of this
+          # repository died on "Get Pages site failed" because nobody had enabled it in
+          # the settings, and a fork would hit the same wall.
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site

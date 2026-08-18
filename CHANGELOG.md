@@ -3,6 +3,20 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.18.1] - 2026-08-18
+
+Nessun codice dell'estensione: la pipeline di pubblicazione, guardata invece che supposta.
+
+### Corretto
+
+- **Lo step del Marketplace riprova tre volte.** Il `publish` di `v0.11.0` era fallito con `Request timeout: /_apis/gallery/publishers/allannava95/extensions/hls-lens` — un timeout dell'API, non un problema di configurazione — e siccome un tag si pusha una volta sola, quella versione non è mai arrivata a nessuno. Un retry che torna con *already exists* viene trattato come **successo**: una richiesta andata in timeout può essere stata accettata lo stesso, e fallire lì significherebbe rompere una release che è già pubblicata.
+- **Le action non girano più su Node 20**, che è deprecato e che i runner stavano già forzando a Node 24 a ogni job: `actions/checkout@v5`, `setup-node@v5`, `upload-artifact@v5`, `download-artifact@v5`, e `node-version: "22"` nei tre workflow.
+- **`configure-pages` ora accende Pages invece di fallire se è spento.** Il primo deploy di questo repo era morto su `Get Pages site failed`, e un fork avrebbe sbattuto contro lo stesso muro.
+
+### Nota
+
+- La pubblicazione sul **Marketplace funziona**: `v0.17.0` risulta `Published allannava95.hls-lens v0.17.0`. `VSCE_PAT` è un secret del repository, non dell'environment `marketplace`, il che va benissimo. Quello che manca è solo `OVSX_PAT`: **Open VSX viene saltato a ogni tag** con un warning, come progettato.
+
 ## [0.18.0] - 2026-08-18
 
 "Il packager ha cambiato qualcosa — cosa?" è una domanda quotidiana a cui nessuna regola può rispondere: ogni regola giudica **un** manifest.
@@ -344,6 +358,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.18.1]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.18.1
 [0.18.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.18.0
 [0.17.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.17.0
 [0.16.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.16.0
