@@ -3,6 +3,15 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.11.1] - 2026-08-18
+
+L'icona dice anche di cosa è fatta la scala.
+
+### Modificato
+
+- **Il mark ha un triangolo di play dentro la lente** (`media/icon.png`, `media/icon.svg`): senza quello i quattro rung sono barre di qualunque cosa — un grafico, un equalizzatore, un livello di batteria — e quello che la scala trasporta, e che un segmento rotto costa, è video. Il triangolo sta **dentro** l'anello della lente, dove non c'è nessun rung a passarci sotto, e si ferma prima dell'anello da entrambi i lati: la lente resta una lente e non diventa un pulsante play. Il difetto rosso sul rung più alto è dove era.
+- **`drawIcon` ha una primitiva in più**, `fillTriangle` (test dei bordi, supersampling 4x per l'antialiasing come il resto del disegno). Come sempre prima il test sui pixel del mark — RED verificato sul pixel al centro della lente, che era ancora inchiostro — poi il disegno. Il PNG committato è rigenerato e il gate `npm run icon:check` lo confronta pixel per pixel.
+
 ## [0.11.0] - 2026-08-18
 
 La timeline: la cosa che le regole potevano solo dire, disegnata.
@@ -225,6 +234,10 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.11.1]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.11.1
+[0.11.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.11.0
+[0.10.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.10.0
+[0.9.1]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.9.1
 [0.9.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.9.0
 [0.8.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.7.0

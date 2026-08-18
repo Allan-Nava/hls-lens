@@ -1586,6 +1586,16 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(at(90, 49), [239, 68, 68, 255], 'the defect mark is red');
   });
 
+  await test('the lens holds a play triangle, the video the ladder is made of', () => {
+    const { rgba } = drawIcon();
+    const at = (x: number, y: number) => Array.from(rgba.subarray((y * 128 + x) * 4, (y * 128 + x) * 4 + 4));
+    // The triangle spans design (34,34)-(34,58)-(58,46), inside the lens ring.
+    assert.deepStrictEqual(at(42, 46), [226, 232, 240, 255], 'the play mark is the lens colour');
+    assert.deepStrictEqual(at(52, 46), [226, 232, 240, 255], 'and it reaches towards the apex');
+    assert.deepStrictEqual(at(44, 56), [11, 18, 32, 255], 'below the triangle the lens still shows the ink through');
+    assert.deepStrictEqual(at(61, 46), [11, 18, 32, 255], 'the apex stops short of the ring');
+  });
+
   await test('encodePng and decodePng round-trip the pixels', () => {
     const { size, rgba } = drawIcon();
     const png = encodePng(rgba, size, size);

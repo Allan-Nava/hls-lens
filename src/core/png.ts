@@ -27,7 +27,8 @@ const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
 /**
  * drawIcon renders the mark: four rungs of increasing height read left to right like
- * a bitrate ladder, a defect cut across the tallest one, and a lens over them.
+ * a bitrate ladder, a defect cut across the tallest one, and a lens over them holding
+ * a play triangle — the ladder carries video, not bars.
  *
  * Deterministic by construction — no clock, no randomness, no environment — because
  * the committed PNG is checked against a fresh render on a machine that is not this
@@ -89,6 +90,35 @@ export function drawIcon(): { size: number; rgba: Uint8Array } {
     }
   };
 
+  /** fillTriangle fills a triangle, for the play mark inside the lens. */
+  const fillTriangle = (
+    ax: number,
+    ay: number,
+    bx: number,
+    by: number,
+    cx: number,
+    cy: number,
+    color: RGBA,
+  ): void => {
+    const minX = Math.floor(Math.min(ax, bx, cx));
+    const maxX = Math.ceil(Math.max(ax, bx, cx));
+    const minY = Math.floor(Math.min(ay, by, cy));
+    const maxY = Math.ceil(Math.max(ay, by, cy));
+    // Twice the signed area: the sign tells which side of an edge a point is on, and
+    // dividing by it would only cost precision for nothing.
+    const area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
+    if (area === 0) return;
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        const w0 = (bx - ax) * (y - ay) - (by - ay) * (x - ax);
+        const w1 = (cx - bx) * (y - by) - (cy - by) * (x - bx);
+        const w2 = (ax - cx) * (y - cy) - (ay - cy) * (x - cx);
+        // Inside when the point is on the same side of all three edges.
+        if (area > 0 ? w0 >= 0 && w1 >= 0 && w2 >= 0 : w0 <= 0 && w1 <= 0 && w2 <= 0) blend(x, y, color);
+      }
+    }
+  };
+
   const u = (n: number): number => n * SCALE; // design units (0–128) to supersampled pixels
 
   fillRoundRect(0, 0, W, W, u(26), INK);
@@ -111,6 +141,10 @@ export function drawIcon(): { size: number; rgba: Uint8Array } {
 
   strokeCircle(u(44), u(46), u(23), u(7), LENS);
   strokeLine(u(60), u(62), u(74), u(76), u(9), LENS);
+
+  // The play mark under the lens: without it the rungs are bars of anything, and what
+  // the ladder carries — and what a broken segment costs — is video.
+  fillTriangle(u(34), u(34), u(34), u(58), u(58), u(46), LENS);
 
   // Box-downsample to the final size: this is where the antialiasing comes from.
   const out = new Uint8Array(SIZE * SIZE * 4);
