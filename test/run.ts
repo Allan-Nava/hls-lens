@@ -11,6 +11,7 @@ import * as path from 'path';
 import { AddressInfo } from 'net';
 
 import * as stub from './vscode-stub';
+import { filterNodes, subtreeMatches } from '../src/core/tree';
 import {
   activate,
   activeManifest,
@@ -2221,6 +2222,122 @@ async function main(): Promise<void> {
       ].join('\n'),
     );
     assert.deepStrictEqual(analyzeMpd(contiguous).filter((f) => f.rule === 'dash/period-not-contiguous'), []);
+  });
+
+  // ------------------------------------------------------------ tree filtering
+  interface Node {
+    label: string;
+    description?: string;
+    children: Node[];
+  }
+  const node = (label: string, description = '', children: Node[] = []): Node => ({ label, description, children });
+  const read = (n: Node) => n;
+
+  await test('a filter keeps a row that matches, and the parents that lead to it', () => {
+    const tree = [
+      node('Variants (3)', '', [node('1080p', '6.10 Mbps'), node('720p', '3.30 Mbps'), node('360p', '0.88 Mbps')]),
+      node('Renditions (1)', '', [node('English (en)', 'AUDIO · aac-128')]),
+    ];
+
+    assert.ok(subtreeMatches(tree[0], '720', read), 'the parent survives because a child matched');
+    assert.ok(!subtreeMatches(tree[1], '720', read));
+    // The match reads the description too: that is where the numbers are, and the
+    // numbers are what a person is looking for.
+    assert.ok(subtreeMatches(tree[1], 'aac', read));
+    // A row matching by its own label keeps its children, or filtering a section
+    // would empty it.
+    assert.ok(subtreeMatches(tree[0], 'variants', read), 'the query is case-insensitive');
+  });
+
+  await test('an empty filter keeps everything, and a filter nothing matches keeps nothing', () => {
+    const tree = [node('Variants (1)', '', [node('1080p', '6.10 Mbps')])];
+    assert.ok(subtreeMatches(tree[0], '', read));
+    assert.ok(subtreeMatches(tree[0], '   ', read));
+    assert.ok(!subtreeMatches(tree[0], 'hevc', read));
+  });
+
+  await test('filterNodes rebuilds the tree with only the branches that survive', () => {
+    const tree = [
+      node('Variants (2)', '', [node('1080p', '6.10 Mbps'), node('720p', '3.30 Mbps')]),
+      node('Problems (1)', '', [node('master/ladder-spacing', 'line 4 · rungs 1.1x apart')]),
+    ];
+    const kept = filterNodes(tree, 'ladder', read, (n, children) => ({ ...n, children }));
+    assert.deepStrictEqual(
+      kept.map((n) => n.label),
+      ['Problems (1)'],
+    );
+    assert.strictEqual(kept[0].children.length, 1);
+
+    // A section that matches by its own label keeps all of its children.
+    const whole = filterNodes(tree, 'variants', read, (n, children) => ({ ...n, children }));
+    assert.strictEqual(whole.length, 1);
+    assert.strictEqual(whole[0].children.length, 2);
+  });
+
+  await test('filtering the tree from the command leaves the branch that matched, and says so', async () => {
+    stub.resetRecorded();
+    activate(stub.fakeContext() as never);
+    stub.recorded.activeDocument = stub.fakeDocument(fixture('master-clean.m3u8'), '/w/master.m3u8');
+    const provider = stub.recorded.treeProviders.get('hlsLens.explorer') as { getChildren(node?: unknown): Array<{ label: string; description?: string; children: unknown[] }> };
+
+    assert.ok(provider.getChildren().length >= 2, 'the unfiltered tree has its sections');
+
+    stub.recorded.nextInput = '720';
+    await stub.recorded.commands.get('hlsLens.filter')!();
+
+    const filtered = provider.getChildren();
+    // The first row is the filter itself: a view that looks empty for no reason is
+    // worse than one that says why.
+    assert.ok(String(filtered[0].label).startsWith('Filtered:'), String(filtered[0].label));
+    assert.ok(String(filtered[0].label).includes('720'));
+    // And the toolbar button that clears it appears only now.
+    assert.strictEqual(stub.recorded.contexts.get('hlsLens.filtered'), true);
+
+    const variants = filtered.find((n) => String(n.label).startsWith('Variants'))!;
+    assert.ok(variants, JSON.stringify(filtered.map((n) => n.label)));
+    assert.strictEqual(variants.children.length, 1, 'only the rung that matched');
+
+    await stub.recorded.commands.get('hlsLens.clearFilter')!();
+    assert.strictEqual(stub.recorded.contexts.get('hlsLens.filtered'), false);
+    assert.ok(!String(provider.getChildren()[0].label).startsWith('Filtered:'));
+  });
+
+  // ------------------------------------------------------------- the walkthrough
+  await test('every command the walkthrough offers is one the extension registers', () => {
+    stub.resetRecorded();
+    activate(stub.fakeContext() as never);
+    const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    const walkthroughs = manifest.contributes.walkthroughs ?? [];
+    assert.ok(walkthroughs.length > 0, 'there is a walkthrough');
+
+    const steps = walkthroughs.flatMap((w: { steps: unknown[] }) => w.steps);
+    assert.ok(steps.length >= 4, 'it has something to say');
+
+    for (const step of steps as Array<{ id: string; title: string; description: string; media: { markdown?: string } }>) {
+      // A step whose markdown is missing renders as an empty panel with no error.
+      if (step.media.markdown) {
+        assert.ok(fs.existsSync(path.join(__dirname, '..', step.media.markdown)), `${step.id}: ${step.media.markdown} exists`);
+      }
+      // A command: link to a command nothing registers does nothing when clicked, and
+      // a walkthrough is the first thing a new user clicks.
+      for (const match of step.description.matchAll(/command:([\w.]+)/g)) {
+        assert.ok(stub.recorded.commands.has(match[1]), `${step.id} links to ${match[1]}, which is not registered`);
+      }
+    }
+  });
+
+  await test('the walkthrough markdown links only to commands that exist', () => {
+    stub.resetRecorded();
+    activate(stub.fakeContext() as never);
+    const dir = path.join(__dirname, '..', 'media', 'walkthrough');
+    const files = fs.readdirSync(dir).filter((name) => name.endsWith('.md'));
+    assert.ok(files.length > 0, 'the walkthrough has media');
+    for (const file of files) {
+      const text = fs.readFileSync(path.join(dir, file), 'utf8');
+      for (const match of text.matchAll(/command:([\w.]+)/g)) {
+        assert.ok(stub.recorded.commands.has(match[1]), `${file} links to ${match[1]}, which is not registered`);
+      }
+    }
   });
 
   // -------------------------------------------------------------- the glue itself

@@ -2,7 +2,7 @@
   "name": "hls-lens",
   "displayName": "HLS Lens",
   "description": "Read HLS manifests in VS Code: inline diagnostics on m3u8 playlists, the bitrate ladder as a tree, and a deep segment check with segcheck.",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "publisher": "allannava95",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -160,6 +160,21 @@
         "icon": "$(export)"
       },
       {
+        "command": "hlsLens.filter",
+        "title": "HLS Lens: Filter the Manifest Tree",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "hlsLens.filterSeverity",
+        "title": "HLS Lens: Filter the Tree by Severity",
+        "icon": "$(list-filter)"
+      },
+      {
+        "command": "hlsLens.clearFilter",
+        "title": "HLS Lens: Clear the Tree Filter",
+        "icon": "$(clear-all)"
+      },
+      {
         "command": "hlsLens.showRules",
         "title": "HLS Lens: Show Rule Reference"
       }
@@ -192,9 +207,19 @@
           "group": "navigation@5"
         },
         {
+          "command": "hlsLens.filter",
+          "when": "view == hlsLens.explorer",
+          "group": "navigation@7"
+        },
+        {
+          "command": "hlsLens.clearFilter",
+          "when": "view == hlsLens.explorer && hlsLens.filtered",
+          "group": "navigation@8"
+        },
+        {
           "command": "hlsLens.refresh",
           "when": "view == hlsLens.explorer",
-          "group": "navigation@6"
+          "group": "navigation@9"
         }
       ],
       "view/item/context": [
@@ -333,7 +358,62 @@
           "description": "Glob excluded when scanning the workspace for manifests."
         }
       }
-    }
+    },
+    "walkthroughs": [
+      {
+        "id": "hlsLens.gettingStarted",
+        "title": "Get started with HLS Lens",
+        "description": "Read a manifest, read the stream behind it, and make the rules yours.",
+        "steps": [
+          {
+            "id": "open",
+            "title": "Open a manifest",
+            "description": "Findings appear on the line to fix, as you type. Or fetch one from a CDN.\n[Open Manifest URL…](command:hlsLens.openUrl)",
+            "media": {
+              "markdown": "media/walkthrough/open.md"
+            },
+            "completionEvents": [
+              "onCommand:hlsLens.openUrl",
+              "onLanguage:m3u8"
+            ]
+          },
+          {
+            "id": "tree",
+            "title": "Read the shape of the stream",
+            "description": "The ladder, the groups, the segments and the findings, as a tree — and as a strip.\n[Show Timeline](command:hlsLens.showTimeline)",
+            "media": {
+              "markdown": "media/walkthrough/tree.md"
+            },
+            "completionEvents": [
+              "onCommand:hlsLens.showTimeline"
+            ]
+          },
+          {
+            "id": "whole-stream",
+            "title": "Look at more than one file",
+            "description": "The defects that only exist between manifests, and the ones in the file nobody opened.\n[Check All Manifests in Workspace](command:hlsLens.checkWorkspace)",
+            "media": {
+              "markdown": "media/walkthrough/whole-stream.md"
+            },
+            "completionEvents": [
+              "onCommand:hlsLens.checkWorkspace",
+              "onCommand:hlsLens.checkTogether"
+            ]
+          },
+          {
+            "id": "tune",
+            "title": "Make it yours",
+            "description": "Re-grade a rule instead of switching it off, pick a profile, export a report.\n[Show Rule Reference](command:hlsLens.showRules)",
+            "media": {
+              "markdown": "media/walkthrough/tune.md"
+            },
+            "completionEvents": [
+              "onCommand:hlsLens.showRules"
+            ]
+          }
+        ]
+      }
+    ]
   },
   "scripts": {
     "build": "node esbuild.mjs",

@@ -17,6 +17,7 @@ import { quickFixesFor } from './core/fixes';
 import { analyzeAcross, LoadedRendition } from './core/crosscheck';
 import { describeChange, diffPlaylists, watchIntervalMs } from './core/watch';
 import { analyzeMpd } from './core/dash';
+import { filterNodes } from './core/tree';
 import { buildMpdTimeline, buildMpdTree, mpdLinks, mpdSummary, MpdRow } from './core/mpdtree';
 import { dashSpec, renderDashHover } from './core/dashspec';
 import { isManifestPath, renderWorkspaceReport, summariseWorkspace, WorkspaceEntry } from './core/workspace';
@@ -122,6 +123,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('hlsLens.checkWorkspace', () => checkWorkspace()),
     vscode.commands.registerCommand('hlsLens.exportReport', () => exportReport()),
     vscode.commands.registerCommand('hlsLens.compareWith', () => compareWith()),
+    vscode.commands.registerCommand('hlsLens.filter', () => setFilter()),
+    vscode.commands.registerCommand('hlsLens.filterSeverity', () => setSeverityFilter()),
+    vscode.commands.registerCommand('hlsLens.clearFilter', () => clearFilter()),
   );
 
   for (const doc of vscode.workspace.textDocuments) updateDiagnostics(doc);
@@ -308,6 +312,15 @@ class TreeNode extends vscode.TreeItem {
       this.command = { command: 'hlsLens.revealLine', title: 'Reveal in manifest', arguments: [line] };
     }
   }
+
+  /** The same row with a different set of children, for the filtered tree. */
+  withChildren(children: TreeNode[]): TreeNode {
+    const copy = new TreeNode(String(this.label), this.kind, this.collapsibleState ?? vscode.TreeItemCollapsibleState.None, children, this.uri, this.line);
+    copy.description = this.description;
+    copy.tooltip = this.tooltip;
+    copy.iconPath = this.iconPath;
+    return copy;
+  }
 }
 
 class ManifestTreeProvider implements vscode.TreeDataProvider<TreeNode> {
@@ -325,10 +338,86 @@ class ManifestTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   getChildren(element?: TreeNode): TreeNode[] {
     if (element) return element.children;
     const active = activeManifest();
-    if (active) return buildTree(active);
-    const mpd = activeMpdDocument();
-    return mpd ? buildMpdNodes(mpd) : [];
+    const nodes = active ? buildTree({ ...active, findings: bySeverity(active.findings) }) : (() => {
+      const mpd = activeMpdDocument();
+      return mpd ? buildMpdNodes(mpd) : [];
+    })();
+    return decorate(applyFilter(nodes));
   }
+}
+
+/** The tree's own filters: a text query and a floor on the findings it shows. */
+let treeFilter = '';
+let treeSeverity: Severity | 'all' = 'all';
+
+function bySeverity(findings: Finding[]): Finding[] {
+  if (treeSeverity === 'all') return findings;
+  const rank: Record<Severity, number> = { error: 0, warning: 1, hint: 2 };
+  return findings.filter((f) => rank[f.severity] <= rank[treeSeverity as Severity]);
+}
+
+export function applyFilter(nodes: TreeNode[]): TreeNode[] {
+  return filterNodes(
+    nodes,
+    treeFilter,
+    (node) => ({ label: String(node.label), description: typeof node.description === 'string' ? node.description : '', children: node.children }),
+    (node, children) => node.withChildren(children),
+  );
+}
+
+/**
+ * A filtered view that does not say it is filtered is a view that looks empty for no
+ * reason, so the filter states itself as the first row and clears itself when clicked.
+ */
+function decorate(nodes: TreeNode[]): TreeNode[] {
+  const active: string[] = [];
+  if (treeFilter.trim() !== '') active.push(`"${treeFilter.trim()}"`);
+  if (treeSeverity !== 'all') active.push(`${treeSeverity} and worse`);
+  if (active.length === 0) return nodes;
+
+  const banner = new TreeNode(`Filtered: ${active.join(' · ')}`, 'info', vscode.TreeItemCollapsibleState.None);
+  banner.description = nodes.length === 0 ? 'nothing matches — click to clear' : 'click to clear';
+  banner.iconPath = new vscode.ThemeIcon('filter');
+  banner.command = { command: 'hlsLens.clearFilter', title: 'Clear the filter' };
+  return [banner, ...nodes];
+}
+
+async function setFilter(): Promise<void> {
+  const query = await vscode.window.showInputBox({
+    title: 'HLS Lens: filter the manifest tree',
+    prompt: 'Text to match against a row and its detail — a rung, a URI, a rule id',
+    value: treeFilter,
+  });
+  if (query === undefined) return;
+  treeFilter = query;
+  void vscode.commands.executeCommand('setContext', 'hlsLens.filtered', isFiltered());
+  tree.refresh();
+}
+
+async function setSeverityFilter(): Promise<void> {
+  const picked = await vscode.window.showQuickPick(
+    [
+      { label: 'Everything', value: 'all' as const },
+      { label: 'Warnings and errors', value: 'warning' as const },
+      { label: 'Errors only', value: 'error' as const },
+    ],
+    { title: 'HLS Lens: which findings to show in the tree' },
+  );
+  if (!picked) return;
+  treeSeverity = picked.value;
+  void vscode.commands.executeCommand('setContext', 'hlsLens.filtered', isFiltered());
+  tree.refresh();
+}
+
+function clearFilter(): void {
+  treeFilter = '';
+  treeSeverity = 'all';
+  void vscode.commands.executeCommand('setContext', 'hlsLens.filtered', false);
+  tree.refresh();
+}
+
+function isFiltered(): boolean {
+  return treeFilter.trim() !== '' || treeSeverity !== 'all';
 }
 
 export function buildTree(active: ActiveManifest): TreeNode[] {

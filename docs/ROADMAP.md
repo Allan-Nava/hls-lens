@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**44 of 48 items done** · `█████████░` 92%
+**46 of 48 items done** · `█████████░` 96%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -31,9 +31,10 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [v0.17.0 — Sending it to someone](#v0170--sending-it-to-someone) | ✅ shipped | 2/2 |
 | [v0.18.0 — Against another manifest](#v0180--against-another-manifest) | ✅ shipped | 2/2 |
 | [v0.19.0 — DASH compared, and across periods](#v0190--dash-compared-and-across-periods) | ✅ shipped | 2/2 |
-| [The extension's interface](#the-extensions-interface) | ⏳ planned | 0/4 |
+| [The extension's interface](#the-extensions-interface) | ⏳ planned | 0/2 |
 | [v0.20.0 — The glue under test](#v0200--the-glue-under-test) | ✅ shipped | 1/1 |
 | [v0.21.0 — DASH drawn and documented](#v0210--dash-drawn-and-documented) | ✅ shipped | 2/2 |
+| [v0.22.0 — Found and filtered](#v0220--found-and-filtered) | ✅ shipped | 2/2 |
 
 ## v0.1.0 — Reading manifests
 
@@ -217,10 +218,8 @@ The Problems panel is where a defect is fixed, not where it is argued about with
 
 Twelve commands, 84 rules and one webview, and no way to discover any of it: the tree shows everything at once or nothing, the timeline is a snapshot you re-run by hand, and the only navigation goes one way — from a row to a line, never back. This is the half of the extension that is glue by design, so each item names the piece of it that is logic and therefore gets a test.
 
-⏳ planned · 0 of 4 · `░░░░░░░░░░`
+⏳ planned · 0 of 2 · `░░░░░░░░░░`
 
-- [ ] **HL-43 — A first run that explains itself**: `contributes.walkthroughs`, the first-run page VS Code gives an extension for free — open a manifest, read the tree, run the deep check, scan the workspace, pick a profile. Nothing here is logic; the value is that twelve commands stop being invisible to anyone who did not read the README.
-- [ ] **HL-44 — A tree you can filter**: a severity filter and a text filter in the view's toolbar. A master with forty rungs and eighty findings is a wall, and the Problems panel filters while the tree does not. The logic — which rows survive a query, and keeping a parent whose child matched — goes in `src/core/tree.ts` with tests; the toolbar buttons and the state are glue.
 - [ ] **HL-45 — A timeline that follows the stream**: the panel re-renders on each poll of `Watch Live Playlist` instead of being a snapshot re-run by hand, with the live edge marked and a zoom to a time range for a window with hundreds of segments. `buildTimeline` gains a range option and the marking of the edge, both tested; the panel plumbing is glue. The bars are already buttons — they need the labels that make them usable without a mouse.
 - [ ] **HL-46 — Navigation that goes both ways**: clicking a tree row reveals its line, and nothing does the reverse. `rowForLine` in the core answers "which row owns this line" and lets the tree follow the cursor, which is how a finding on line 4000 of a live playlist becomes findable at all.
 
@@ -240,3 +239,12 @@ The last two of `DASH, all the way`: the milestone is closed.
 
 - [x] **HL-40 — The timeline for an MPD**: `buildMpdTimeline` reads the `<SegmentTimeline>` of every adaptation set — `@r` expanded, `@timescale` applied — and feeds the **same** layout, axis and out-of-step detection the HLS timeline uses (`layoutRows`, extracted for it). Period boundaries are drawn as discontinuities, which is what they are: crossing one is where a decoder gets reconfigured. An MPD that lists no segments draws **nothing** rather than guessing a segment count from `@duration`, because a strip with an invented number of segments in it is a picture that lies.
 - [x] **HL-41 — Document links and hover in an MPD**: `mpdLinks` finds the URLs (`<BaseURL>`, `@initialization`, `@sourceURL`, `UTCTiming@value`) and deliberately skips the templates — nothing resolves `$Number$`, so a link to `chunk-$Number$.m4s` would offer a request that cannot be made. It reads the text rather than the parsed tree because a link is a *range* and the XML reader keeps lines, not columns; the limitation (a `<BaseURL>` split across lines) is written down. `src/core/dashspec.ts` documents eleven elements with their attributes, and a test asserts that everything the tree, the rules and the timeline read is among them.
+
+## v0.22.0 — Found and filtered
+
+The first half of `The extension's interface`: being discoverable, and not being a wall.
+
+✅ shipped · 2 of 2 · `██████████`
+
+- [x] **HL-43 — A first run that explains itself**: `contributes.walkthroughs` with four steps — open a manifest, read the shape of the stream, look at more than one file, make the rules yours — each with its own markdown. The logic-free half of the item still gets a test: **every `command:` link in the walkthrough is checked against the commands `activate` registers**, in the steps and in the markdown files, because a walkthrough is the first thing a new user clicks and a dead link there does nothing at all, silently.
+- [x] **HL-44 — A tree you can filter**: `src/core/tree.ts` holds the two rules that make a filtered tree usable — a row survives if it or anything under it matches (otherwise searching for a segment URI hides the section containing it), and a row that matches on its own keeps all its children (otherwise filtering for "variants" gives an empty section header). The description is searched as well as the label, because that is where the numbers are. The filter states itself as the first row and clears itself when clicked: a view that looks empty for no reason is worse than one that says why. A severity filter sits next to it. Both are driven end to end in a test, now that the glue can be.

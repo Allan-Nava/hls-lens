@@ -1,0 +1,60 @@
+// Filtering a tree, without knowing what the tree is made of.
+//
+// The tree in the view is built from vscode.TreeItem, which cannot exist here — so
+// this works through a reader function instead. What is worth testing is not the
+// TreeItem plumbing but the two rules that make a filtered tree usable at all:
+//
+//   * a row survives if it matches, or if anything under it matches — otherwise
+//     filtering for a segment URI hides the section that contains it, and the result
+//     is an empty view for a query that has an answer;
+//   * a row that matches by itself keeps all of its children — filtering for
+//     "variants" should show the variants, not an empty section header.
+//
+// The description is searched as well as the label, because the description is where
+// the numbers are, and the numbers are what someone is looking for.
+
+/** What this needs to know about a node: its text, and what is under it. */
+export interface TreeShape<T> {
+  label: string;
+  description?: string;
+  children: T[];
+}
+
+/** subtreeMatches reports whether a node, or anything below it, matches the query. */
+export function subtreeMatches<T>(node: T, query: string, read: (node: T) => TreeShape<T>): boolean {
+  const needle = query.trim().toLowerCase();
+  if (needle === '') return true;
+  const shape = read(node);
+  if (`${shape.label} ${shape.description ?? ''}`.toLowerCase().includes(needle)) return true;
+  return shape.children.some((child) => subtreeMatches(child, query, read));
+}
+
+/**
+ * filterNodes rebuilds a tree with only the branches that survive the query. The
+ * caller supplies both how to read a node and how to make one, so the same logic
+ * serves whatever the view is actually built from.
+ */
+export function filterNodes<T>(
+  nodes: T[],
+  query: string,
+  read: (node: T) => TreeShape<T>,
+  rebuild: (node: T, children: T[]) => T,
+): T[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === '') return nodes;
+
+  const kept: T[] = [];
+  for (const node of nodes) {
+    const shape = read(node);
+    const itself = `${shape.label} ${shape.description ?? ''}`.toLowerCase().includes(needle);
+    // A row that matches on its own keeps everything under it: a section header with
+    // its contents removed is a worse answer than no answer.
+    if (itself) {
+      kept.push(node);
+      continue;
+    }
+    const children = filterNodes(shape.children, query, read, rebuild);
+    if (children.length > 0) kept.push(rebuild(node, children));
+  }
+  return kept;
+}

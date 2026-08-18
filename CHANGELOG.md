@@ -3,6 +3,24 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.22.0] - 2026-08-18
+
+La prima metà di `The extension's interface`: essere trovabile, e non essere un muro.
+
+### Aggiunto
+
+- **Un walkthrough al primo avvio** (`contributes.walkthroughs`): quattro passi — aprire un manifest, leggere la forma dello stream, guardare più di un file, tarare le regole sul proprio stile — ognuno con il suo markdown. Dodici comandi sono dodici cose che nessuno trova per caso.
+  - La metà senza logica ha comunque un test: **ogni link `command:` del walkthrough viene verificato contro i comandi che `activate` registra**, sia nei passi sia nei file markdown. Un walkthrough è la prima cosa che un utente nuovo clicca, e un link morto lì non fa niente — in silenzio.
+- **Un albero filtrabile** (`src/core/tree.ts`), per testo e per severità. Le due regole che rendono usabile un albero filtrato stanno nel core e hanno un test:
+  - una riga sopravvive se lei **o qualcosa sotto di lei** fa match — altrimenti cercare l'URI di un segmento nasconde la sezione che lo contiene, e il risultato è una vista vuota per una domanda che aveva risposta;
+  - una riga che fa match da sola **tiene tutti i figli** — altrimenti filtrare per "variants" dà l'intestazione di una sezione svuotata.
+  - Cerca anche nella `description` e non solo nell'etichetta: è lì che stanno i numeri, ed è i numeri che uno cerca.
+  - Il filtro **si dichiara come prima riga** dell'albero e si azzera se lo clicchi. Una vista che sembra vuota senza motivo è peggio di una che dice perché. Il pulsante che lo cancella compare nella toolbar solo quando serve (`setContext`), e anche quello è sotto test.
+
+### Nota
+
+- Il filtro è guidato **da capo a fondo in un test**: si attiva l'estensione, si esegue il comando `hlsLens.filter` con una risposta finta all'input box, e si legge cosa torna il `TreeDataProvider`. Fino a due release fa non era possibile: è il primo interesse che la testabilità della glue paga da sola.
+
 ## [0.21.0] - 2026-08-18
 
 Le ultime due voci di `DASH, all the way`: la milestone si chiude.
@@ -426,6 +444,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.22.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.22.0
 [0.21.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.21.0
 [0.20.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.20.0
 [0.19.1]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.19.1

@@ -239,6 +239,10 @@ export const recorded = {
   configuration: {} as Record<string, unknown>,
   activeDocument: undefined as Record<string, unknown> | undefined,
   openDocuments: [] as Array<Record<string, unknown>>,
+  /** What the next showInputBox / showQuickPick should answer, so a command can be driven. */
+  nextInput: undefined as string | undefined,
+  nextPick: undefined as unknown,
+  contexts: new Map<string, unknown>(),
 };
 
 export function resetRecorded(): void {
@@ -255,6 +259,9 @@ export function resetRecorded(): void {
   recorded.configuration = {};
   recorded.activeDocument = undefined;
   recorded.openDocuments.length = 0;
+  recorded.nextInput = undefined;
+  recorded.nextPick = undefined;
+  recorded.contexts.clear();
 }
 
 const noopDisposable = new Disposable(() => undefined);
@@ -291,7 +298,10 @@ export const commands = {
     recorded.commands.set(id, handler);
     return noopDisposable;
   },
-  executeCommand(_id: string, ..._args: unknown[]): Promise<unknown> {
+  executeCommand(id: string, ...args: unknown[]): Promise<unknown> {
+    // setContext is what a `when` clause in package.json reads, so a test can check
+    // that a toolbar button appears exactly when it should.
+    if (id === 'setContext' && typeof args[0] === 'string') recorded.contexts.set(args[0], args[1]);
     return Promise.resolve(undefined);
   },
 };
@@ -347,10 +357,14 @@ export const window = {
     return Promise.resolve(undefined);
   },
   showInputBox(_options?: unknown): Promise<string | undefined> {
-    return Promise.resolve(undefined);
+    const answer = recorded.nextInput;
+    recorded.nextInput = undefined;
+    return Promise.resolve(answer);
   },
-  showQuickPick(_items: unknown, _options?: unknown): Promise<undefined> {
-    return Promise.resolve(undefined);
+  showQuickPick(_items: unknown, _options?: unknown): Promise<unknown> {
+    const answer = recorded.nextPick;
+    recorded.nextPick = undefined;
+    return Promise.resolve(answer);
   },
   showTextDocument(document: unknown, _options?: unknown): Promise<unknown> {
     return Promise.resolve({ document });

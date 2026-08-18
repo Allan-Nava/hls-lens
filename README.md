@@ -28,7 +28,8 @@ Plus the ladder as a tree, clickable child playlists, and — when you point it 
 ## What it does
 
 - **Diagnostics while you type.** Every rule reports the line, the reason and the fix. Rule ids are stable (`media/extinf-exceeds-target`), so a rule you disagree with goes in `hlsLens.diagnostics.skip` and stays gone. The full reference is [docs/RULES.md](docs/RULES.md), and `HLS Lens: Show Rule Reference` opens it inside the editor.
-- **The manifest as a tree.** The bitrate ladder in ascending order (with I-frame streams kept out of it, where they belong), the alternate audio and subtitle renditions, the segments with their durations and discontinuity/gap marks, the init segment and the keys, the low-latency vocabulary — the parts, the preload hint, the rendition reports — and the findings. Clicking a row reveals its line.
+- **A walkthrough on first run.** Twelve commands are twelve things nobody finds by accident: **Get started with HLS Lens** in the welcome page walks through opening a manifest, reading the tree, going wider than one file, and grading the rules to your own house style.
+- **The manifest as a tree, filterable.** The bitrate ladder in ascending order (with I-frame streams kept out of it, where they belong), the alternate audio and subtitle renditions, the segments with their durations and discontinuity/gap marks, the init segment and the keys, the low-latency vocabulary — the parts, the preload hint, the rendition reports — and the findings. Clicking a row reveals its line, and the filter in the view's toolbar narrows it to what you are looking for, by text or by severity.
 - **Open a manifest from a URL.** `HLS Lens: Open Manifest URL…` fetches a playlist into a read-only editor with the diagnostics already on it. Redirects are followed and the *final* URL is what child URIs resolve against, so a CDN redirect does not send you hunting on the wrong host.
 - **Follow the links.** Variant, rendition, segment and `EXT-X-MAP` URIs are document links: on disk they open the file, on a CDN they open where they live.
 - **Deep check with segcheck.** The manifest rules read claims. `HLS Lens: Deep Check Segments` runs `segcheck check --output json` on a URL, so the findings that need the actual bytes — a gap no `EXT-X-DISCONTINUITY` declares, a rung that codes a lower resolution than it promises, a segment whose real duration drifts from its `EXTINF` — land next to them in the Problems panel. Without the binary the extension still does everything else; the deep check is the only feature that needs it.
@@ -78,6 +79,7 @@ For the deep check, install segcheck (`brew install --cask allan-nava/tap/segche
 | `HLS Lens: Show Timeline` | The segments as a strip, the rungs stacked on one axis, the drift drawn |
 | `HLS Lens: Check All Manifests in Workspace` | Analyse every manifest in the folder, opened or not |
 | `HLS Lens: Compare With…` | What this manifest declares that another one did not |
+| `HLS Lens: Filter the Manifest Tree` | Narrow the view to the rows that match, parents included |
 | `HLS Lens: Export Findings as a Report` | The findings as markdown or JSON, to attach to a ticket |
 | `HLS Lens: Watch Live Playlist` | Reload the live playlist and report what changes; click the status bar to stop |
 | `HLS Lens: Deep Check This Rendition` | Run segcheck against one rung picked in the tree, not the whole master |

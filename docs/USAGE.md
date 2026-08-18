@@ -26,6 +26,15 @@ The **HLS** view in the activity bar shows the manifest as it is structured:
 | Low latency | The server control (whether the parts buy any latency at all), the parts with their `INDEPENDENT`/`GAP` marks, the preload hint and the rendition reports — first 50 parts, and it says so |
 | Problems | Every finding, worst first, with the line |
 
+A master with forty rungs and eighty findings is a wall, so the toolbar has a filter: by text
+(matched against a row **and its detail**, which is where the numbers are) and by severity. A row
+survives if it matches or if anything under it does — searching for a segment URI would otherwise
+hide the section that contains it — and a row that matches on its own keeps its children, so
+filtering for `variants` shows the variants rather than an empty header.
+
+The filter states itself as the first row of the tree and clears itself when clicked. A view that
+looks empty for no reason is worse than one that says why.
+
 Clicking a row reveals its line in the manifest. Variant and rendition rows have two inline actions: **open the child playlist** (in the editor when it is a file, fetched when it is remote) and **copy the resolved URI**.
 
 Variant, rendition, segment and `EXT-X-MAP` URIs are also document links in the editor itself: ⌘-click a URI to follow it.
