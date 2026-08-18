@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**37 of 37 items done** · `██████████` 100%
+**39 of 39 items done** · `██████████` 100%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -29,6 +29,7 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [v0.15.0 — DASH gets a shape](#v0150--dash-gets-a-shape) | ✅ shipped | 1/1 |
 | [v0.16.0 — Grading and fixing](#v0160--grading-and-fixing) | ✅ shipped | 2/2 |
 | [v0.17.0 — Sending it to someone](#v0170--sending-it-to-someone) | ✅ shipped | 2/2 |
+| [v0.18.0 — Against another manifest](#v0180--against-another-manifest) | ✅ shipped | 2/2 |
 
 ## v0.1.0 — Reading manifests
 
@@ -191,3 +192,12 @@ The Problems panel is where a defect is fixed, not where it is argued about with
 
 - [x] **HL-35 — Export the findings as a report**: `src/core/report.ts` renders the findings as markdown for a ticket or as JSON for whatever reads it next, from the open manifest or from the last workspace scan. The JSON carries a `schema` number, because anything parsing it is code somebody else wrote and needs something to pin. **Lines are 1-based in the export**: 0-based is an editor's convention, and a report is read by people and by CI, which both count from 1. Pipes in a message are escaped — a URI with one in it would otherwise end the table column early and shift every cell after it.
 - [x] **HL-36 — The low-latency vocabulary in the tree**: eleven rules read `EXT-X-PART`, `EXT-X-PRELOAD-HINT` and `EXT-X-RENDITION-REPORT`, and the tree showed none of them. `lowLatencyRows` adds a section with the server control (whether the parts buy any latency at all), the parts with their duration and their `INDEPENDENT`/`GAP` marks, the hint a player blocks on and the reports it switches rungs by. Capped at 50 parts — a live window holds hundreds — and the cap is **stated** in a row of its own.
+
+## v0.18.0 — Against another manifest
+
+"The packager changed something — what?" is a daily question no rule can answer, because every rule judges one manifest.
+
+✅ shipped · 2 of 2 · `██████████`
+
+- [x] **HL-37 — Compare with another manifest**: `src/core/compare.ts` reports what the open manifest declares that another one did not — rungs added, removed or re-rated, rendition groups that came and went, and for a media playlist the version, the target duration, the segment count and an `EXT-X-ENDLIST` that arrived. **Rungs are matched by URI**: a packager keeps the path of a rendition stable far more often than its bitrate, so the URI is what tells "the same rung, re-rated" apart from "a new rung". A text diff answers the same question in a form nobody can read — a manifest is a set of declarations, and the interesting change is which declaration moved, not which line did.
+- [x] **HL-38 — House styles as a starting grade**: `hlsLens.diagnostics.profile` with `apple` (the HLS Authoring Specification: an I-frame playlist and a RESOLUTION stop being advisory) and `low-latency` (a stream sold as such owes the reports and the hold-backs). The catalogue has one opinion per rule and cannot have the right one for everybody — an I-frame playlist is advisory in RFC 8216 and required by Apple, and which you are held to depends on where the stream is going. A profile is a **starting point**: `diagnostics.severity` is applied on top, so a team can take the profile and still argue with one line of it.

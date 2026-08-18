@@ -86,6 +86,38 @@ Seven findings come with a quick fix (the lightbulb, or `⌘.`):
 
 Nothing else is offered a fix. A missing `CODECS` string, a badly spaced ladder or a key served over plaintext HTTP all need a decision that an editor command has no business making.
 
+## Comparing with another manifest
+
+**HLS Lens: Compare With…** takes a path or a URL — relative paths resolve against the open manifest
+— and reports what the open one declares that the other did not: rungs added, removed or re-rated,
+rendition groups that came and went, and for a media playlist the version, the target duration, the
+segment count and an `EXT-X-ENDLIST` that arrived.
+
+Rungs are matched by **URI**, not by bitrate or by position. A packager keeps the path of a
+rendition stable far more often than it keeps its bitrate, so the URI is what tells *the same rung,
+re-rated* apart from *a new rung* — which is usually the whole question.
+
+## Profiles
+
+The catalogue has one opinion per rule and it cannot have the right one for everybody. An I-frame
+playlist is advisory in RFC 8216 and required by Apple's authoring specification, and which of those
+you are held to depends on where the stream is going.
+
+```jsonc
+{
+  // "apple" or "low-latency"; your own severity settings are applied on top.
+  "hlsLens.diagnostics.profile": "apple"
+}
+```
+
+| Profile | What it insists on |
+|---|---|
+| `apple` | an I-frame playlist, `RESOLUTION` on every video rung, a codec level that can carry it, `AVERAGE-BANDWIDTH`, a sane ladder, a wall clock on a live playlist |
+| `low-latency` | the rendition reports, both hold-back floors, a usable `CAN-SKIP-UNTIL`, a hint that actually preloads |
+
+A profile is a starting point, not a policy: `hlsLens.diagnostics.severity` is applied on top of it,
+so a team can take a profile and still argue with one line of it.
+
 ## Sending the findings to someone
 
 **HLS Lens: Export Findings as a Report** turns what was found into a document: markdown to paste

@@ -2,7 +2,7 @@
   "name": "hls-lens",
   "displayName": "HLS Lens",
   "description": "Read HLS manifests in VS Code: inline diagnostics on m3u8 playlists, the bitrate ladder as a tree, and a deep segment check with segcheck.",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "publisher": "allannava95",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -150,6 +150,11 @@
         "icon": "$(search)"
       },
       {
+        "command": "hlsLens.compareWith",
+        "title": "HLS Lens: Compare With…",
+        "icon": "$(diff)"
+      },
+      {
         "command": "hlsLens.exportReport",
         "title": "HLS Lens: Export Findings as a Report",
         "icon": "$(export)"
@@ -256,6 +261,16 @@
             ]
           },
           "markdownDescription": "Re-grade a rule by id or by category, e.g. `{\"master/ladder-spacing\": \"warning\", \"syntax\": \"off\"}`. The more specific setting wins."
+        },
+        "hlsLens.diagnostics.profile": {
+          "type": "string",
+          "enum": [
+            "none",
+            "apple",
+            "low-latency"
+          ],
+          "default": "none",
+          "markdownDescription": "A house style to grade the rules by, before `#hlsLens.diagnostics.severity#` is applied on top: `apple` for the HLS Authoring Specification, `low-latency` for a stream sold as such."
         },
         "hlsLens.pdtDriftToleranceMs": {
           "type": "number",

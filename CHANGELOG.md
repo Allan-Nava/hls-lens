@@ -3,6 +3,20 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.18.0] - 2026-08-18
+
+"Il packager ha cambiato qualcosa — cosa?" è una domanda quotidiana a cui nessuna regola può rispondere: ogni regola giudica **un** manifest.
+
+### Aggiunto
+
+- **`HLS Lens: Compare With…`** (`src/core/compare.ts`): prende un path o un URL e dice cosa il manifest aperto dichiara che l'altro non dichiarava — rung aggiunti, tolti o ri-tarati, gruppi di rendition andati e venuti, e per una media playlist versione, target duration, conteggio dei segmenti e un `EXT-X-ENDLIST` arrivato.
+  - **I rung si appaiano per URI**, non per bitrate né per posizione. Un packager tiene stabile il path di una rendition molto più di quanto tenga stabile il suo bitrate, quindi l'URI è ciò che distingue *stesso rung, ri-tarato* da *rung nuovo* — che poi è tutta la domanda.
+  - Un diff testuale risponde alla stessa domanda in una forma che non legge nessuno: un manifest è un insieme di dichiarazioni, e la cosa interessante è quale dichiarazione si è spostata, non quale riga.
+  - I change puntano alla riga del manifest **aperto**, che è quello che l'operatore ha davanti.
+- **`hlsLens.diagnostics.profile`** (`src/core/profiles.ts`): `apple` e `low-latency`. Il catalogo ha **una** opinione per regola e non può avere quella giusta per tutti — un playlist I-frame è consultivo in RFC 8216 e obbligatorio nella authoring specification di Apple, e a quale dei due sei tenuto dipende da dove va lo stream.
+  - Un profilo è un **punto di partenza**: `hlsLens.diagnostics.severity` si applica sopra, quindi un team può prendere il profilo e litigare comunque con una riga sola. C'è il test.
+  - Un nome di profilo sconosciuto non grada niente e non lancia: viene da un file di impostazioni, e un refuso lì deve lasciare il catalogo com'è.
+
 ## [0.17.0] - 2026-08-18
 
 Il pannello Problems è dove un difetto si corregge, non dove lo si discute con chi ha prodotto il manifest.
@@ -330,6 +344,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.18.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.18.0
 [0.17.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.17.0
 [0.16.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.16.0
 [0.15.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.15.0

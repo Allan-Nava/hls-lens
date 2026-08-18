@@ -23,6 +23,8 @@ import { frontMatter, renderMarkdown, renderPage, pageTitle } from '../src/core/
 import { buildTimeline, niceTicks, renderTimelineHtml } from '../src/core/timeline';
 import { isManifestPath, summariseWorkspace, renderWorkspaceReport } from '../src/core/workspace';
 import { renderFindingsMarkdown, renderFindingsJson } from '../src/core/report';
+import { compareManifests, describeComparison } from '../src/core/compare';
+import { profileOverrides } from '../src/core/profiles';
 import { analyze, RULES, Finding, Severity, applySeverityOverrides } from '../src/core/analyze';
 import { buildLadder, renditionRows, ladderSummary, formatBandwidth, formatResolution, lowLatencyRows } from '../src/core/ladder';
 import { resolveUri, baseOf, isRemote, isPlainHttp, looksLikePlaylistUri } from '../src/core/uri';
@@ -1921,6 +1923,88 @@ async function main(): Promise<void> {
     assert.strictEqual(rows.filter((r) => r.kind === 'part').length, 5);
     const note = rows.find((r) => r.kind === 'note');
     assert.ok(note && note.label.includes('55 more'), JSON.stringify(note));
+  });
+
+  // ------------------------------------------------------------------- compare
+  const LADDER_BEFORE =
+    '#EXTM3U\n#EXT-X-VERSION:7\n' +
+    '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="English",DEFAULT=YES,AUTOSELECT=YES,URI="a/en.m3u8"\n' +
+    '#EXT-X-STREAM-INF:BANDWIDTH=880000,RESOLUTION=640x360,CODECS="avc1.4d401e",AUDIO="aac"\n360.m3u8\n' +
+    '#EXT-X-STREAM-INF:BANDWIDTH=3300000,RESOLUTION=1280x720,CODECS="avc1.4d401f",AUDIO="aac"\n720.m3u8\n';
+
+  await test('comparing two masters names the rungs that came and went', () => {
+    const after =
+      '#EXTM3U\n#EXT-X-VERSION:7\n' +
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="aac",NAME="English",DEFAULT=YES,AUTOSELECT=YES,URI="a/en.m3u8"\n' +
+      '#EXT-X-STREAM-INF:BANDWIDTH=880000,RESOLUTION=640x360,CODECS="avc1.4d401e",AUDIO="aac"\n360.m3u8\n' +
+      '#EXT-X-STREAM-INF:BANDWIDTH=6100000,RESOLUTION=1920x1080,CODECS="avc1.640028",AUDIO="aac"\n1080.m3u8\n';
+    const changes = compareManifests(parsePlaylist(LADDER_BEFORE), parsePlaylist(after));
+    const kinds = changes.map((c) => `${c.kind}:${c.label}`);
+    assert.ok(kinds.includes('rung-removed:720.m3u8'), JSON.stringify(kinds));
+    assert.ok(kinds.includes('rung-added:1080.m3u8'), JSON.stringify(kinds));
+    // The rung that is in both is not news.
+    assert.ok(!kinds.some((k) => k.endsWith('360.m3u8')), JSON.stringify(kinds));
+  });
+
+  await test('a rung kept under the same URI is compared attribute by attribute', () => {
+    const rerated = LADDER_BEFORE.replace('BANDWIDTH=3300000', 'BANDWIDTH=2900000').replace('avc1.4d401f', 'hvc1.1.6.L93.B0');
+    const changes = compareManifests(parsePlaylist(LADDER_BEFORE), parsePlaylist(rerated));
+    const changed = changes.find((c) => c.kind === 'rung-changed');
+    assert.ok(changed, JSON.stringify(changes));
+    assert.strictEqual(changed!.label, '720.m3u8');
+    assert.ok(changed!.detail.includes('3.30 Mbps → 2.90 Mbps'), changed!.detail);
+    assert.ok(changed!.detail.includes('hvc1.1.6.L93.B0'), changed!.detail);
+    // It points at the line in the manifest being compared *to*, which is the one
+    // the operator has open.
+    assert.ok(parsePlaylist(rerated).lines[changed!.line].includes('BANDWIDTH=2900000'));
+  });
+
+  await test('a rendition group that disappeared is reported', () => {
+    const without = LADDER_BEFORE.split('\n').filter((l) => !l.startsWith('#EXT-X-MEDIA')).join('\n');
+    const changes = compareManifests(parsePlaylist(LADDER_BEFORE), parsePlaylist(without));
+    assert.ok(changes.some((c) => c.kind === 'group-removed' && c.label.includes('aac')), JSON.stringify(changes));
+  });
+
+  await test('two media playlists are compared on what a player reads first', () => {
+    const before = '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000,\na.ts\n#EXTINF:6.000,\nb.ts\n#EXT-X-ENDLIST\n';
+    const after = '#EXTM3U\n#EXT-X-VERSION:7\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.000,\na.ts\n#EXT-X-ENDLIST\n';
+    const kinds = compareManifests(parsePlaylist(before), parsePlaylist(after)).map((c) => c.kind);
+    assert.ok(kinds.includes('version'), JSON.stringify(kinds));
+    assert.ok(kinds.includes('target-duration'), JSON.stringify(kinds));
+    assert.ok(kinds.includes('segments'), JSON.stringify(kinds));
+  });
+
+  await test('comparing a manifest with itself finds nothing to say', () => {
+    assert.deepStrictEqual(compareManifests(parsePlaylist(LADDER_BEFORE), parsePlaylist(LADDER_BEFORE)), []);
+    assert.deepStrictEqual(describeComparison([]), ['the two manifests declare the same thing']);
+  });
+
+  await test('comparing a master with a media playlist says so and stops', () => {
+    const media = '#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000,\na.ts\n#EXT-X-ENDLIST\n';
+    const changes = compareManifests(parsePlaylist(LADDER_BEFORE), parsePlaylist(media));
+    assert.deepStrictEqual(
+      changes.map((c) => c.kind),
+      ['kind'],
+    );
+  });
+
+  // ------------------------------------------------------------------ profiles
+  await test('a profile grades the rules a house style cares about', () => {
+    const apple = profileOverrides('apple');
+    assert.strictEqual(apple['master/no-iframe-stream'], 'error');
+    assert.deepStrictEqual(profileOverrides('nonsense'), {});
+
+    const findings: Finding[] = [
+      { rule: 'master/no-iframe-stream', severity: 'hint', line: 0, message: 'a' },
+      { rule: 'master/ladder-spacing', severity: 'hint', line: 1, message: 'b' },
+    ];
+    const graded = applySeverityOverrides(findings, apple);
+    assert.strictEqual(severityOf(graded, 'master/no-iframe-stream'), 'error');
+
+    // The user's own settings are the last word: a profile is a starting point, not
+    // a policy they cannot argue with.
+    const both = applySeverityOverrides(findings, { ...apple, 'master/no-iframe-stream': 'off' });
+    assert.ok(!ruleIds(both).includes('master/no-iframe-stream'));
   });
 
   // -------------------------------------------------------------------- report

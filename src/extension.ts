@@ -20,6 +20,8 @@ import { analyzeMpd } from './core/dash';
 import { buildMpdTree, mpdSummary, MpdRow } from './core/mpdtree';
 import { isManifestPath, renderWorkspaceReport, summariseWorkspace, WorkspaceEntry } from './core/workspace';
 import { renderFindingsJson, renderFindingsMarkdown } from './core/report';
+import { compareManifests, describeComparison } from './core/compare';
+import { profileOverrides } from './core/profiles';
 import { buildTimeline, renderTimelineHtml, TimelineTrack } from './core/timeline';
 import { isRemote, looksLikePlaylistUri, resolveUri } from './core/uri';
 
@@ -116,6 +118,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('hlsLens.showTimeline', () => showTimeline()),
     vscode.commands.registerCommand('hlsLens.checkWorkspace', () => checkWorkspace()),
     vscode.commands.registerCommand('hlsLens.exportReport', () => exportReport()),
+    vscode.commands.registerCommand('hlsLens.compareWith', () => compareWith()),
   );
 
   for (const doc of vscode.workspace.textDocuments) updateDiagnostics(doc);
@@ -155,7 +158,13 @@ function severityToVsCode(severity: Severity): vscode.DiagnosticSeverity {
  * floor, so a hint promoted to an error is visible even with the floor raised.
  */
 function graded(findings: Finding[]): Finding[] {
-  const overrides = vscode.workspace.getConfiguration('hlsLens').get<Record<string, string>>('diagnostics.severity', {});
+  const config = vscode.workspace.getConfiguration('hlsLens');
+  // The profile is a starting point and the user's own settings are the last word,
+  // so they go on top of it rather than under it.
+  const overrides = {
+    ...profileOverrides(config.get<string>('diagnostics.profile', 'none')),
+    ...config.get<Record<string, string>>('diagnostics.severity', {}),
+  };
   return applySeverityOverrides(findings, overrides);
 }
 
@@ -862,6 +871,58 @@ async function checkTogether(): Promise<void> {
     kept.length === 0
       ? `HLS Lens: ${loaded.length} renditions agree${skipped}.`
       : `HLS Lens: ${kept.length} finding(s) across ${loaded.length} renditions${skipped}.`,
+  );
+}
+
+/**
+ * HL-37: this manifest against another one.
+ *
+ * "The packager changed something — what?" is a daily question no rule can answer,
+ * because every rule judges one manifest. A text diff answers it in a form nobody can
+ * read: a manifest is a set of declarations, and the interesting change is which
+ * declaration moved, not which line did.
+ */
+async function compareWith(): Promise<void> {
+  const active = activeManifest();
+  if (!active) {
+    void vscode.window.showWarningMessage('HLS Lens: open a playlist to compare first.');
+    return;
+  }
+  const other = await vscode.window.showInputBox({
+    title: 'HLS Lens: compare with',
+    prompt: 'Path or URL of the manifest to compare against (relative paths resolve against the open one)',
+    placeHolder: '../old/master.m3u8, or https://cdn.example.com/master.m3u8',
+  });
+  if (!other) return;
+
+  const resolved = resolveUri(active.location, other.trim());
+  let text: string;
+  try {
+    const config = vscode.workspace.getConfiguration('hlsLens');
+    text = isRemote(resolved)
+      ? (
+          await fetchText(resolved, {
+            headers: config.get<Record<string, string>>('request.headers', {}),
+            timeoutMs: config.get<number>('request.timeoutMs', 15000),
+          })
+        ).text
+      : Buffer.from(await vscode.workspace.fs.readFile(vscode.Uri.file(resolved))).toString('utf8');
+  } catch (err) {
+    void vscode.window.showErrorMessage(`HLS Lens: could not read ${resolved}: ${err instanceof Error ? err.message : String(err)}`);
+    return;
+  }
+
+  // The manifest that was there before is the other one; the open file is the state
+  // being explained, so it is what the changes are reported against.
+  const changes = compareManifests(parsePlaylist(text), active.playlist);
+  output.appendLine('');
+  output.appendLine(`${resolved} → ${active.location}`);
+  for (const line of describeComparison(changes)) output.appendLine(`  ${line}`);
+  output.show(true);
+  void vscode.window.showInformationMessage(
+    changes.length === 0
+      ? 'HLS Lens: the two manifests declare the same thing.'
+      : `HLS Lens: ${changes.length} difference(s) — see the output.`,
   );
 }
 
