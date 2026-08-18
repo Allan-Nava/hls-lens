@@ -3,6 +3,19 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.16.0] - 2026-08-18
+
+Gli id delle regole sono l'API che un team fissa, e finora quell'API sapeva dire solo "spegnila".
+
+### Aggiunto
+
+- **`hlsLens.diagnostics.severity`**: rigrada una regola per id o un'intera categoria — `error`, `warning`, `hint` o `off`. Vince l'impostazione più specifica, quindi si può abbassare una categoria e tenere alta una regola dentro. Viene applicata **prima** del filtro `minSeverity`, così un hint promosso a errore resta visibile anche col pavimento alzato, e i finding vengono **ri-ordinati** dopo: una regola promossa a errore e lasciata in fondo al pannello sarebbe peggio che non promuoverla.
+  - Un valore che non è una severità viene **lasciato stare**. È un refuso in un file di impostazioni: sia scartare la regola sia indovinare l'intenzione lo nasconderebbero.
+- **Tre quick fix nuovi**, 4 → 7:
+  - `syntax/unknown-tag`: propone il tag che si voleva scrivere, con la distanza di Levenshtein calcolata sul vocabolario del parser stesso. Il tetto è **due edit**: oltre non è un refuso ma un'estensione di vendor o un tag di una spec più nuova di questo parser, e riscriverla distruggerebbe una riga voluta. Il valore dopo i due punti è dell'autore e resta.
+  - `master/rendition-default-not-autoselect`: `AUTOSELECT=NO` → `YES`.
+  - `master/rendition-forced`: toglie `FORCED` **senza lasciare in giro la sua virgola** (c'è il test).
+
 ## [0.15.0] - 2026-08-18
 
 DASH aveva le regole dalla `v0.8.0` e nessuna forma.
@@ -304,6 +317,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.16.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.16.0
 [0.15.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.15.0
 [0.14.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.14.0
 [0.13.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.13.0

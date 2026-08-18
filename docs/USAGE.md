@@ -42,6 +42,23 @@ Every finding carries the rule id as its diagnostic code, so the Problems panel 
 }
 ```
 
+A rule you disagree with about *how loud* it should be does not have to be switched off:
+
+```jsonc
+{
+  // A rule id or a whole category, graded to error / warning / hint / off.
+  "hlsLens.diagnostics.severity": {
+    "master/ladder-spacing": "warning",
+    "syntax/unknown-tag": "off",
+    "dash": "hint"
+  }
+}
+```
+
+The more specific setting wins, so a category can be quietened with one rule kept loud. A value
+that is not a severity is left alone rather than guessed at: that is a typo in a settings file, and
+silently dropping the rule would hide it.
+
 Two rules have thresholds, because they are the ones that are genuinely site policy:
 
 - `hlsLens.pdtDriftToleranceMs` (default 500) — how far `EXT-X-PROGRAM-DATE-TIME` may drift from the sum of the `EXTINF` durations between two stamps before `media/pdt-drift` fires.
@@ -55,13 +72,16 @@ Hover a tag for its reference: what it does, the `EXT-X-VERSION` it needs, wheth
 
 Completions follow the same source. Typing `#` offers the tags that are legal in the playlist you are in — a media playlist is never offered `EXT-X-STREAM-INF` — with the required version on each entry. Inside a tag that takes an attribute list, `,` offers the attributes it accepts, minus the ones already on the line, and `=` offers the enumerated values where the attribute has a closed set.
 
-Three findings come with a quick fix (the lightbulb, or `⌘.`):
+Seven findings come with a quick fix (the lightbulb, or `⌘.`):
 
 | Finding | Fix |
 |---|---|
 | `syntax/version-too-low` | Set `EXT-X-VERSION` to what the playlist already uses |
 | `media/missing-endlist` | Append `#EXT-X-ENDLIST` after the last segment |
 | `media/extinf-exceeds-target` · `media/target-duration-overstated` | Set `EXT-X-TARGETDURATION` to the longest segment, rounded up |
+| `syntax/unknown-tag` | Change the tag to the one it was meant to be, when one is within two edits |
+| `master/rendition-default-not-autoselect` | Set `AUTOSELECT=YES` |
+| `master/rendition-forced` | Remove `FORCED` |
 
 Nothing else is offered a fix. A missing `CODECS` string, a badly spaced ladder or a key served over plaintext HTTP all need a decision that an editor command has no business making.
 

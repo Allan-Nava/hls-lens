@@ -135,3 +135,10 @@ The manifest with the defect is the one nobody thought to open.
 The rules have read MPDs since v0.8.0. The tree never did.
 
 - [x] **HL-32 — The MPD as a tree**: `src/core/mpdtree.ts` with `buildMpdTree` (periods → adaptation sets → representations, each with its own line index) and `mpdSummary` for the status bar. An open `.mpd` now shows its shape in the HLS view, with the Problems at the bottom as a playlist has, and clicking a row reveals its line. The DASH ladder *is* in the file — nested four elements deep and spread across attributes, which is exactly the reading this extension exists to do for you.
+
+## v0.16.0 — Grading and fixing
+
+Rule ids are the API a team pins, and "off" was the only thing it could say.
+
+- [x] **HL-33 — Re-grade a rule instead of switching it off**: `applySeverityOverrides` and the `hlsLens.diagnostics.severity` setting take a rule id or a whole category and give it another severity, or `off`. The more specific setting wins, the findings are re-sorted afterwards (a rule promoted to error and left at the bottom of the panel would be worse than not promoting it), and a value that is not a severity is **left alone** — that is a typo in a settings file, and both dropping the rule and guessing at the intent would hide it.
+- [x] **HL-34 — Three more quick fixes**: a misspelled tag offered the tag it was meant to be (Levenshtein against the parser's own vocabulary, never further than two edits — beyond that it is a vendor extension, not a typo), `AUTOSELECT=NO` on a default rendition set to `YES`, and a stray `FORCED` removed without leaving its comma behind.

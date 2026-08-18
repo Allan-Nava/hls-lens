@@ -2,7 +2,7 @@
   "name": "hls-lens",
   "displayName": "HLS Lens",
   "description": "Read HLS manifests in VS Code: inline diagnostics on m3u8 playlists, the bitrate ladder as a tree, and a deep segment check with segcheck.",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "publisher": "allannava95",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -237,6 +237,20 @@
           },
           "default": [],
           "description": "Rule ids or categories to skip (e.g. master/missing-codecs, syntax)."
+        },
+        "hlsLens.diagnostics.severity": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "error",
+              "warning",
+              "hint",
+              "off"
+            ]
+          },
+          "markdownDescription": "Re-grade a rule by id or by category, e.g. `{\"master/ladder-spacing\": \"warning\", \"syntax\": \"off\"}`. The more specific setting wins."
         },
         "hlsLens.pdtDriftToleranceMs": {
           "type": "number",

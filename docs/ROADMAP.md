@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**33 of 33 items done** · `██████████` 100%
+**35 of 35 items done** · `██████████` 100%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -27,6 +27,7 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [v0.13.0 — Rendition groups](#v0130--rendition-groups) | ✅ shipped | 3/3 |
 | [v0.14.0 — The whole workspace](#v0140--the-whole-workspace) | ✅ shipped | 1/1 |
 | [v0.15.0 — DASH gets a shape](#v0150--dash-gets-a-shape) | ✅ shipped | 1/1 |
+| [v0.16.0 — Grading and fixing](#v0160--grading-and-fixing) | ✅ shipped | 2/2 |
 
 ## v0.1.0 — Reading manifests
 
@@ -171,3 +172,12 @@ The rules have read MPDs since v0.8.0. The tree never did.
 ✅ shipped · 1 of 1 · `██████████`
 
 - [x] **HL-32 — The MPD as a tree**: `src/core/mpdtree.ts` with `buildMpdTree` (periods → adaptation sets → representations, each with its own line index) and `mpdSummary` for the status bar. An open `.mpd` now shows its shape in the HLS view, with the Problems at the bottom as a playlist has, and clicking a row reveals its line. The DASH ladder *is* in the file — nested four elements deep and spread across attributes, which is exactly the reading this extension exists to do for you.
+
+## v0.16.0 — Grading and fixing
+
+Rule ids are the API a team pins, and "off" was the only thing it could say.
+
+✅ shipped · 2 of 2 · `██████████`
+
+- [x] **HL-33 — Re-grade a rule instead of switching it off**: `applySeverityOverrides` and the `hlsLens.diagnostics.severity` setting take a rule id or a whole category and give it another severity, or `off`. The more specific setting wins, the findings are re-sorted afterwards (a rule promoted to error and left at the bottom of the panel would be worse than not promoting it), and a value that is not a severity is **left alone** — that is a typo in a settings file, and both dropping the rule and guessing at the intent would hide it.
+- [x] **HL-34 — Three more quick fixes**: a misspelled tag offered the tag it was meant to be (Levenshtein against the parser's own vocabulary, never further than two edits — beyond that it is a vendor extension, not a typo), `AUTOSELECT=NO` on a default rendition set to `YES`, and a stray `FORCED` removed without leaving its comma behind.

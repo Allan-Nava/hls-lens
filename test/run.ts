@@ -22,7 +22,7 @@ import { buildMpdTree, mpdSummary } from '../src/core/mpdtree';
 import { frontMatter, renderMarkdown, renderPage, pageTitle } from '../src/core/markdown';
 import { buildTimeline, niceTicks, renderTimelineHtml } from '../src/core/timeline';
 import { isManifestPath, summariseWorkspace, renderWorkspaceReport } from '../src/core/workspace';
-import { analyze, RULES, Finding, Severity } from '../src/core/analyze';
+import { analyze, RULES, Finding, Severity, applySeverityOverrides } from '../src/core/analyze';
 import { buildLadder, renditionRows, ladderSummary, formatBandwidth, formatResolution } from '../src/core/ladder';
 import { resolveUri, baseOf, isRemote, isPlainHttp, looksLikePlaylistUri } from '../src/core/uri';
 import { buildSegcheckArgs, parseSegcheckResult, segcheckToFindings, segcheckSummary } from '../src/core/segcheck';
@@ -1738,6 +1738,81 @@ async function main(): Promise<void> {
     // leaks which manifests were opened.
     assert.ok(!/(src|href)="https?:/.test(html), 'no external resource');
     assert.strictEqual(html, renderTimelineHtml(model, { title: 'live.m3u8', nonce: 'n0nce' }));
+  });
+
+  // ------------------------------------------------------- severity, more fixes
+  await test('a rule can be re-graded by id, by category, or switched off', () => {
+    const findings: Finding[] = [
+      { rule: 'master/missing-bandwidth', severity: 'error', line: 5, message: 'a' },
+      { rule: 'master/ladder-spacing', severity: 'hint', line: 2, message: 'b' },
+      { rule: 'media/gap-segments', severity: 'warning', line: 9, message: 'c' },
+    ];
+
+    const graded = applySeverityOverrides(findings, { 'master/ladder-spacing': 'error' });
+    assert.strictEqual(severityOf(graded, 'master/ladder-spacing'), 'error');
+    // Re-graded findings are re-sorted: the panel is ordered worst first, and a rule
+    // promoted to error that stayed at the bottom would be worse than not promoting it.
+    assert.deepStrictEqual(
+      graded.map((f) => f.rule),
+      ['master/ladder-spacing', 'master/missing-bandwidth', 'media/gap-segments'],
+    );
+
+    const byCategory = applySeverityOverrides(findings, { master: 'hint' });
+    assert.strictEqual(severityOf(byCategory, 'master/missing-bandwidth'), 'hint');
+    assert.strictEqual(severityOf(byCategory, 'media/gap-segments'), 'warning');
+
+    // The more specific setting wins, whichever order they are written in.
+    const both = applySeverityOverrides(findings, { master: 'hint', 'master/missing-bandwidth': 'error' });
+    assert.strictEqual(severityOf(both, 'master/missing-bandwidth'), 'error');
+    assert.strictEqual(severityOf(both, 'master/ladder-spacing'), 'hint');
+
+    const off = applySeverityOverrides(findings, { 'media/gap-segments': 'off' });
+    assert.deepStrictEqual(ruleIds(off), ['master/missing-bandwidth', 'master/ladder-spacing']);
+
+    // A value that is not a severity is a typo in a settings file. Dropping the rule
+    // or guessing at the intent would both hide it; leaving it alone does not.
+    const typo = applySeverityOverrides(findings, { 'master/missing-bandwidth': 'errror' });
+    assert.strictEqual(severityOf(typo, 'master/missing-bandwidth'), 'error');
+    assert.strictEqual(typo.length, 3);
+  });
+
+  await test('a misspelled tag is offered the tag it was meant to be', () => {
+    const text = '#EXTM3U\n#EXT-X-TARGETDURATON:6\n#EXTINF:6.000,\na.ts\n#EXT-X-ENDLIST\n';
+    const pl = parsePlaylist(text);
+    const finding = analyze(pl).find((f) => f.rule === 'syntax/unknown-tag');
+    assert.ok(finding, 'the misspelling is reported');
+    const fixes = quickFixesFor(pl, finding!);
+    assert.strictEqual(fixes.length, 1);
+    assert.ok(fixes[0].title.includes('EXT-X-TARGETDURATION'), fixes[0].title);
+    // The value after the colon is the author's, and is kept.
+    assert.deepStrictEqual(fixes[0].edit, { kind: 'replace', line: 1, text: '#EXT-X-TARGETDURATION:6' });
+
+    // Nothing close enough is nothing to offer: a guess here rewrites a line the
+    // author may have meant, and the tag may be from a spec this parser predates.
+    const alien = parsePlaylist('#EXTM3U\n#EXT-X-CUSTOM-VENDOR-THING:1\n#EXT-X-ENDLIST\n');
+    const unknown = analyze(alien).find((f) => f.rule === 'syntax/unknown-tag');
+    assert.deepStrictEqual(quickFixesFor(alien, unknown!), []);
+  });
+
+  await test('the contradictory rendition flags have a fix each', () => {
+    const master = (media: string): string =>
+      `#EXTM3U\n#EXT-X-VERSION:7\n${media}\n#EXT-X-STREAM-INF:BANDWIDTH=1000000,RESOLUTION=640x360,CODECS="avc1.4d401e",AUDIO="a"\nv.m3u8\n`;
+
+    const contradiction = master('#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",DEFAULT=YES,AUTOSELECT=NO,URI="a.m3u8"');
+    const pl = parsePlaylist(contradiction);
+    const defaulted = analyze(pl).find((f) => f.rule === 'master/rendition-default-not-autoselect');
+    const fix = quickFixesFor(pl, defaulted!)[0];
+    assert.ok(fix.edit.kind === 'replace' && fix.edit.text.includes('AUTOSELECT=YES'), JSON.stringify(fix));
+    assert.ok(fix.edit.kind === 'replace' && !fix.edit.text.includes('AUTOSELECT=NO'));
+
+    const forced = master('#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=YES,URI="a.m3u8"');
+    const forcedPl = parsePlaylist(forced);
+    const flagged = analyze(forcedPl).find((f) => f.rule === 'master/rendition-forced');
+    const dropped = quickFixesFor(forcedPl, flagged!)[0];
+    assert.ok(dropped.edit.kind === 'replace' && !dropped.edit.text.includes('FORCED'), JSON.stringify(dropped));
+    // Dropping an attribute must not leave a stray comma behind.
+    assert.ok(dropped.edit.kind === 'replace' && !/,\s*,/.test(dropped.edit.text));
+    assert.ok(dropped.edit.kind === 'replace' && dropped.edit.text.includes('AUTOSELECT=YES,URI="a.m3u8"'));
   });
 
   // ------------------------------------------------------------------ mpd tree

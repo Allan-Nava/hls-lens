@@ -7,7 +7,7 @@ import * as vscode from 'vscode';
 import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 
-import { analyze, Finding, RULES, Severity } from './core/analyze';
+import { analyze, applySeverityOverrides, Finding, RULES, Severity } from './core/analyze';
 import { buildLadder, LadderRow, ladderSummary, renditionRows } from './core/ladder';
 import { parsePlaylist, Playlist, looksLikePlaylist } from './core/playlist';
 import { buildSegcheckArgs, parseSegcheckResult, segcheckSummary, segcheckToFindings } from './core/segcheck';
@@ -148,6 +148,15 @@ function severityToVsCode(severity: Severity): vscode.DiagnosticSeverity {
   }
 }
 
+/**
+ * Findings as the user's settings want them graded. Applied before the minSeverity
+ * floor, so a hint promoted to an error is visible even with the floor raised.
+ */
+function graded(findings: Finding[]): Finding[] {
+  const overrides = vscode.workspace.getConfiguration('hlsLens').get<Record<string, string>>('diagnostics.severity', {});
+  return applySeverityOverrides(findings, overrides);
+}
+
 function updateDiagnostics(doc: vscode.TextDocument): void {
   const config = vscode.workspace.getConfiguration('hlsLens');
   if (isMpdDocument(doc) && !isPlaylistDocument(doc)) {
@@ -158,9 +167,9 @@ function updateDiagnostics(doc: vscode.TextDocument): void {
     const skip = config.get<string[]>('diagnostics.skip', []);
     const floor = config.get<Severity>('diagnostics.minSeverity', 'hint');
     const rank: Record<Severity, number> = { error: 0, warning: 1, hint: 2 };
-    const found = analyzeMpd(doc.getText())
-      .filter((f) => !skip.includes(f.rule) && !skip.includes(f.rule.split('/')[0]))
-      .filter((f) => rank[f.severity] <= rank[floor]);
+    const found = graded(analyzeMpd(doc.getText()).filter((f) => !skip.includes(f.rule) && !skip.includes(f.rule.split('/')[0]))).filter(
+      (f) => rank[f.severity] <= rank[floor],
+    );
     diagnostics.set(doc.uri, found.map((f) => toDiagnostic(doc, f)));
     return;
   }
@@ -183,7 +192,9 @@ function updateDiagnostics(doc: vscode.TextDocument): void {
   const rank: Record<Severity, number> = { error: 0, warning: 1, hint: 2 };
   diagnostics.set(
     doc.uri,
-    findings.filter((f) => rank[f.severity] <= rank[floor]).map((f) => toDiagnostic(doc, f)),
+    graded(findings)
+      .filter((f) => rank[f.severity] <= rank[floor])
+      .map((f) => toDiagnostic(doc, f)),
   );
 }
 
@@ -229,11 +240,13 @@ function activeManifest(): ActiveManifest | undefined {
     doc,
     playlist,
     location: locationOf(doc),
-    findings: analyze(playlist, {
-      pdtDriftToleranceMs: config.get<number>('pdtDriftToleranceMs', 500),
-      targetDurationSlack: config.get<number>('targetDurationSlack', 1.5),
-      skip: config.get<string[]>('diagnostics.skip', []),
-    }),
+    findings: graded(
+      analyze(playlist, {
+        pdtDriftToleranceMs: config.get<number>('pdtDriftToleranceMs', 500),
+        targetDurationSlack: config.get<number>('targetDurationSlack', 1.5),
+        skip: config.get<string[]>('diagnostics.skip', []),
+      }),
+    ),
   };
 }
 
@@ -429,7 +442,7 @@ function buildMpdNodes(doc: vscode.TextDocument): TreeNode[] {
 
   const config = vscode.workspace.getConfiguration('hlsLens');
   const skip = config.get<string[]>('diagnostics.skip', []);
-  const findings = analyzeMpd(text).filter((f) => !skip.includes(f.rule) && !skip.includes(f.rule.split('/')[0]));
+  const findings = graded(analyzeMpd(text).filter((f) => !skip.includes(f.rule) && !skip.includes(f.rule.split('/')[0])));
   if (findings.length > 0) nodes.push(problemsSection(findings));
   return nodes;
 }
@@ -804,7 +817,7 @@ async function checkTogether(): Promise<void> {
 
   // The master goes in too: cross/session-key-mismatch compares its EXT-X-SESSION-KEY
   // with the keys the renditions actually use.
-  const findings = analyzeAcross(loaded, { master: active.playlist });
+  const findings = graded(analyzeAcross(loaded, { master: active.playlist }));
   const skip = config.get<string[]>('diagnostics.skip', []);
   const kept = findings.filter((f) => !skip.includes(f.rule) && !skip.includes(f.rule.split('/')[0]));
   crossDiagnostics.set(
@@ -874,7 +887,7 @@ async function checkWorkspace(): Promise<void> {
           continue;
         }
 
-        const findings = (
+        const findings = graded(
           uri.path.toLowerCase().endsWith('.mpd')
             ? analyzeMpd(text).filter((f) => !skip.includes(f.rule) && !skip.includes(f.rule.split('/')[0]))
             : analyze(parsePlaylist(text), {

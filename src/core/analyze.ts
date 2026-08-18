@@ -830,6 +830,42 @@ export function analyze(pl: Playlist, options: AnalyzeOptions = {}): Finding[] {
   );
 }
 
+/** What a setting may say about a rule: a severity, or "off" to drop it entirely. */
+export type SeverityOverride = Severity | 'off';
+
+const SEVERITY_VALUES: string[] = ['error', 'warning', 'hint', 'off'];
+
+/**
+ * applySeverityOverrides re-grades findings from a rule id or a whole category.
+ *
+ * Rule ids are the API a team pins, and "skip it entirely" was the only thing that
+ * API could express: a rule you disagree with as an error but want to keep seeing had
+ * to be switched off. The more specific setting wins, and a value that is not a
+ * severity is left alone — that is a typo in a settings file, and both dropping the
+ * rule and guessing at the intent would hide it.
+ */
+export function applySeverityOverrides(findings: Finding[], overrides: Record<string, string>): Finding[] {
+  if (Object.keys(overrides).length === 0) return findings;
+
+  const graded: Finding[] = [];
+  for (const finding of findings) {
+    const wanted = overrides[finding.rule] ?? overrides[finding.rule.split('/')[0]];
+    if (wanted === undefined || !SEVERITY_VALUES.includes(wanted)) {
+      graded.push(finding);
+      continue;
+    }
+    if (wanted === 'off') continue;
+    graded.push({ ...finding, severity: wanted as Severity });
+  }
+  // Re-sorted, because the panel is ordered worst first: a rule promoted to error and
+  // left at the bottom of the list would be worse than not promoting it.
+  return graded.sort((a, b) =>
+    SEVERITY_RANK[a.severity] !== SEVERITY_RANK[b.severity]
+      ? SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]
+      : a.line - b.line || a.rule.localeCompare(b.rule),
+  );
+}
+
 type Add = (rule: string, line: number, message: string, hint?: string) => void;
 
 function checkSyntax(pl: Playlist, add: Add): void {
