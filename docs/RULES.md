@@ -2,7 +2,7 @@
 
 # Rules
 
-HLS Lens ships 73 rules. Most read one manifest — the claims it makes — and point at the line you have to fix;
+HLS Lens ships 81 rules. Most read one manifest — the claims it makes — and point at the line you have to fix;
 the `cross/*` rules read the master and its renditions together and report on the variant line of the master.
 For the defects that need the segment bytes (a gap that no `EXT-X-DISCONTINUITY` declares, a 1080p rung that codes 720p),
 run the deep check, which brings [segcheck](https://github.com/Allan-Nava/segcheck) findings into the same Problems panel.
@@ -27,6 +27,14 @@ Ids are stable: they are what `hlsLens.diagnostics.skip` pins.
 | [`master/undefined-group`](#masterundefined-group) | error | AUDIO, SUBTITLES and CLOSED-CAPTIONS groups exist |
 | [`master/group-no-default`](#mastergroup-no-default) | warning | Each rendition group has a default |
 | [`master/group-multiple-defaults`](#mastergroup-multiple-defaults) | error | A rendition group has at most one default |
+| [`master/rendition-missing-attributes`](#masterrendition-missing-attributes) | error | Every EXT-X-MEDIA declares TYPE, GROUP-ID and NAME |
+| [`master/rendition-uri`](#masterrendition-uri) | error | Subtitles are fetched, closed captions are carried in the video |
+| [`master/rendition-forced`](#masterrendition-forced) | warning | FORCED is only defined for subtitles |
+| [`master/rendition-default-not-autoselect`](#masterrendition-default-not-autoselect) | error | A default rendition is one a player may select |
+| [`master/rendition-duplicate-name`](#masterrendition-duplicate-name) | warning | Two renditions of a group do not share a NAME |
+| [`master/audio-group-mixed-channels`](#masteraudio-group-mixed-channels) | hint | One audio group, one channel count |
+| [`master/unused-group`](#masterunused-group) | warning | Every rendition group is referenced by a variant |
+| [`master/inconsistent-groups`](#masterinconsistent-groups) | warning | The variants reference the same groups as each other |
 | [`master/no-iframe-stream`](#masterno-iframe-stream) | hint | The master offers an I-frame playlist for trick play |
 | [`master/plaintext-uri`](#masterplaintext-uri) | warning | Child playlists are addressed over HTTPS |
 | [`master/average-bandwidth-missing`](#masteraverage-bandwidth-missing) | hint | Variants declare AVERAGE-BANDWIDTH |
@@ -185,6 +193,54 @@ With no DEFAULT=YES in a group, which audio or subtitle track a player starts wi
 **A rendition group has at most one default** · error
 
 Two DEFAULT=YES renditions of the same type in the same group contradict each other; the spec allows one, and players resolve the conflict differently.
+
+### `master/rendition-missing-attributes`
+
+**Every EXT-X-MEDIA declares TYPE, GROUP-ID and NAME** · error
+
+A variant resolves its alternate audio and subtitles by group name alone. A rendition missing the attributes that identify it cannot be resolved, and nothing fails loudly: the stream simply plays without the track.
+
+### `master/rendition-uri`
+
+**Subtitles are fetched, closed captions are carried in the video** · error
+
+A subtitles rendition with no URI has nothing to fetch. Closed captions are the opposite: they ride inside the video stream, so a URI is forbidden and INSTREAM-ID is what names the caption service. Both mistakes produce a track a player offers and cannot show.
+
+### `master/rendition-forced`
+
+**FORCED is only defined for subtitles** · warning
+
+FORCED marks the subtitle track a player shows even with subtitles switched off — the one that translates on-screen text. On an audio or video rendition it means nothing and players ignore it, which usually means the track was meant to be something else.
+
+### `master/rendition-default-not-autoselect`
+
+**A default rendition is one a player may select** · error
+
+DEFAULT=YES with AUTOSELECT=NO says both "play this unless told otherwise" and "never pick this automatically". The spec requires AUTOSELECT=YES when DEFAULT=YES; which of the two a player honours is its own decision.
+
+### `master/rendition-duplicate-name`
+
+**Two renditions of a group do not share a NAME** · warning
+
+NAME is what a player puts in its track picker. Two identical entries are indistinguishable to whoever has to choose, and which one they get depends on the order the player happened to read them in.
+
+### `master/audio-group-mixed-channels`
+
+**One audio group, one channel count** · hint
+
+Renditions of a group are alternatives a player switches between freely. A group mixing stereo and 5.1 changes the mix under the viewer when they change language, and on some devices restarts the audio pipeline to do it.
+
+### `master/unused-group`
+
+**Every rendition group is referenced by a variant** · warning
+
+A group no EXT-X-STREAM-INF names is never offered to anyone: the alternate audio is encoded, published and cached, and no player can reach it. It is the same rename as master/undefined-group, seen from the other side.
+
+### `master/inconsistent-groups`
+
+**The variants reference the same groups as each other** · warning
+
+A player picks a rung on bandwidth alone. If one rung names an AUDIO group and another does not, whether the viewer has alternate audio becomes a function of their connection at that moment — and it changes mid-playback, which no log explains.
 
 ### `master/no-iframe-stream`
 

@@ -80,6 +80,31 @@ Nothing else is offered a fix. A missing `CODECS` string, a badly spaced ladder 
 
 Only the playable video rungs are compared. An alternate audio or subtitle rendition is legitimately segmented differently, and reporting that as drift would be a finding that is not one. A rendition that cannot be read is listed in the **HLS Lens** output channel and skipped, so one unreachable rung does not hide the others.
 
+## Rendition groups
+
+Alternate audio, subtitles and captions are the one part of a master a player resolves purely by
+name. Nothing fails loudly when a name is wrong — the stream plays without the track — so these
+rules read the group from both sides.
+
+| Rule | What it catches |
+|---|---|
+| `master/rendition-missing-attributes` | an `EXT-X-MEDIA` with no `TYPE`, `GROUP-ID` or `NAME`, or a `TYPE` the spec does not define |
+| `master/rendition-uri` | subtitles with no `URI`; closed captions *with* one (forbidden) or with no `INSTREAM-ID` |
+| `master/rendition-forced` | `FORCED=YES` on a rendition that is not subtitles |
+| `master/rendition-default-not-autoselect` | `DEFAULT=YES` together with `AUTOSELECT=NO` |
+| `master/rendition-duplicate-name` | two renditions of one group sharing a `NAME` |
+| `master/audio-group-mixed-channels` | one audio group mixing stereo and 5.1 |
+| `master/undefined-group` | a variant naming a group no `EXT-X-MEDIA` declares |
+| `master/unused-group` | a group no variant names — the same rename, from the other side |
+| `master/inconsistent-groups` | variants that do not all reference the same groups |
+
+The last one is the one that produces the strangest bug reports: a player picks a rung on bandwidth
+alone, so if only some rungs name the `AUDIO` group, whether the viewer has alternate audio depends
+on their connection at that moment, and changes mid-playback.
+
+`AUTOSELECT` left out is not treated as `AUTOSELECT=NO`. Only the explicit "no" contradicts a
+default, and only that is reported.
+
 ## Variables
 
 `EXT-X-DEFINE` lets one template serve several deployments, and the extension substitutes the

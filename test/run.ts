@@ -1738,6 +1738,102 @@ async function main(): Promise<void> {
     assert.strictEqual(html, renderTimelineHtml(model, { title: 'live.m3u8', nonce: 'n0nce' }));
   });
 
+  // ---------------------------------------------------------- rendition groups
+  /** A master with the given EXT-X-MEDIA lines and one variant that uses group "a". */
+  function masterWith(media: string, streamInf = ',AUDIO="a"'): string {
+    return (
+      `#EXTM3U\n#EXT-X-VERSION:7\n${media}\n` +
+      `#EXT-X-STREAM-INF:BANDWIDTH=1000000,AVERAGE-BANDWIDTH=900000,RESOLUTION=640x360,CODECS="avc1.4d401e"${streamInf}\nv.m3u8\n`
+    );
+  }
+
+  await test('a rendition says what it is, in which group, under a name', () => {
+    for (const media of [
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a"',
+      '#EXT-X-MEDIA:TYPE=AUDIO,NAME="English"',
+      '#EXT-X-MEDIA:GROUP-ID="a",NAME="English"',
+      '#EXT-X-MEDIA:TYPE=SUPERTITLES,GROUP-ID="a",NAME="English"',
+    ]) {
+      assert.ok(ruleIds(analyze(parsePlaylist(masterWith(media)))).includes('master/rendition-missing-attributes'), media);
+    }
+    const complete = '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",DEFAULT=YES,AUTOSELECT=YES,URI="a.m3u8"';
+    assert.ok(!ruleIds(analyze(parsePlaylist(masterWith(complete)))).includes('master/rendition-missing-attributes'));
+  });
+
+  await test('subtitles carry a URI, closed captions carry an INSTREAM-ID instead', () => {
+    const subs = (extra: string): string =>
+      masterWith(`#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="s",NAME="English",DEFAULT=YES,AUTOSELECT=YES${extra}`, ',SUBTITLES="s"');
+    assert.ok(ruleIds(analyze(parsePlaylist(subs('')))).includes('master/rendition-uri'));
+    assert.ok(!ruleIds(analyze(parsePlaylist(subs(',URI="s.m3u8"')))).includes('master/rendition-uri'));
+
+    const cc = (extra: string): string =>
+      masterWith(`#EXT-X-MEDIA:TYPE=CLOSED-CAPTIONS,GROUP-ID="cc",NAME="English",DEFAULT=YES,AUTOSELECT=YES${extra}`, ',CLOSED-CAPTIONS="cc"');
+    // Captions are carried in the video stream: there is nothing to fetch, and the
+    // INSTREAM-ID is what says where in the stream they are.
+    assert.ok(ruleIds(analyze(parsePlaylist(cc('')))).includes('master/rendition-uri'));
+    assert.ok(ruleIds(analyze(parsePlaylist(cc(',INSTREAM-ID="CC1",URI="cc.m3u8"')))).includes('master/rendition-uri'));
+    assert.ok(!ruleIds(analyze(parsePlaylist(cc(',INSTREAM-ID="CC1"')))).includes('master/rendition-uri'));
+  });
+
+  await test('FORCED belongs to subtitles, and a default is autoselectable', () => {
+    const forcedAudio = '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",DEFAULT=YES,AUTOSELECT=YES,FORCED=YES,URI="a.m3u8"';
+    assert.ok(ruleIds(analyze(parsePlaylist(masterWith(forcedAudio)))).includes('master/rendition-forced'));
+    const forcedSubs = '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="s",NAME="Forced",DEFAULT=YES,AUTOSELECT=YES,FORCED=YES,URI="s.m3u8"';
+    assert.ok(!ruleIds(analyze(parsePlaylist(masterWith(forcedSubs, ',SUBTITLES="s"')))).includes('master/rendition-forced'));
+
+    const contradiction = '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",DEFAULT=YES,AUTOSELECT=NO,URI="a.m3u8"';
+    assert.ok(ruleIds(analyze(parsePlaylist(masterWith(contradiction)))).includes('master/rendition-default-not-autoselect'));
+    // AUTOSELECT left out is not the same as AUTOSELECT=NO: only the explicit "no"
+    // contradicts the default, and only that is reported.
+    const silent = '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",DEFAULT=YES,URI="a.m3u8"';
+    assert.ok(!ruleIds(analyze(parsePlaylist(masterWith(silent)))).includes('master/rendition-default-not-autoselect'));
+  });
+
+  await test('two renditions of one group do not share a name', () => {
+    const twice =
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",LANGUAGE="en",DEFAULT=YES,AUTOSELECT=YES,URI="en.m3u8"\n' +
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",LANGUAGE="en-GB",DEFAULT=NO,AUTOSELECT=YES,URI="gb.m3u8"';
+    assert.ok(ruleIds(analyze(parsePlaylist(masterWith(twice)))).includes('master/rendition-duplicate-name'));
+
+    // The same name in two different groups is two ladders, not a duplicate.
+    const apart =
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",DEFAULT=YES,AUTOSELECT=YES,URI="en.m3u8"\n' +
+      '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="s",NAME="English",DEFAULT=YES,AUTOSELECT=YES,URI="en-subs.m3u8"';
+    assert.ok(!ruleIds(analyze(parsePlaylist(masterWith(apart, ',AUDIO="a",SUBTITLES="s"')))).includes('master/rendition-duplicate-name'));
+  });
+
+  await test('an audio group whose renditions differ in channel count is reported', () => {
+    const mixed =
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Stereo",DEFAULT=YES,AUTOSELECT=YES,CHANNELS="2",URI="2.m3u8"\n' +
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Surround",DEFAULT=NO,AUTOSELECT=YES,CHANNELS="6",URI="6.m3u8"';
+    assert.ok(ruleIds(analyze(parsePlaylist(masterWith(mixed)))).includes('master/audio-group-mixed-channels'));
+
+    const even =
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",DEFAULT=YES,AUTOSELECT=YES,CHANNELS="2",URI="en.m3u8"\n' +
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="Italiano",DEFAULT=NO,AUTOSELECT=YES,CHANNELS="2",URI="it.m3u8"';
+    assert.ok(!ruleIds(analyze(parsePlaylist(masterWith(even)))).includes('master/audio-group-mixed-channels'));
+  });
+
+  await test('a rendition group nothing references is reported', () => {
+    const orphan =
+      '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",DEFAULT=YES,AUTOSELECT=YES,URI="a.m3u8"\n' +
+      '#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID="s",NAME="English",DEFAULT=YES,AUTOSELECT=YES,URI="s.m3u8"';
+    const found = findingsOf(masterWith(orphan), 'master/unused-group');
+    assert.strictEqual(found.length, 1);
+    assert.ok(parsePlaylist(masterWith(orphan)).lines[found[0].line].includes('TYPE=SUBTITLES'));
+    assert.strictEqual(findingsOf(masterWith(orphan, ',AUDIO="a",SUBTITLES="s"'), 'master/unused-group').length, 0);
+  });
+
+  await test('the variants agree on which groups they use', () => {
+    const media = '#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",NAME="English",DEFAULT=YES,AUTOSELECT=YES,URI="a.m3u8"';
+    const two = (first: string, second: string): string =>
+      `#EXTM3U\n#EXT-X-VERSION:7\n${media}\n` +
+      `#EXT-X-STREAM-INF:BANDWIDTH=1000000,AVERAGE-BANDWIDTH=900000,RESOLUTION=640x360,CODECS="avc1.4d401e"${first}\na.m3u8\n` +
+      `#EXT-X-STREAM-INF:BANDWIDTH=2500000,AVERAGE-BANDWIDTH=2200000,RESOLUTION=1280x720,CODECS="avc1.4d401f"${second}\nb.m3u8\n`;
+    assert.ok(ruleIds(analyze(parsePlaylist(two(',AUDIO="a"', '')))).includes('master/inconsistent-groups'));
+    assert.ok(!ruleIds(analyze(parsePlaylist(two(',AUDIO="a"', ',AUDIO="a"')))).includes('master/inconsistent-groups'));
+  });
+
   // ----------------------------------------------------------------- variables
   await test('the parser substitutes the variables the playlist defines', () => {
     const text =

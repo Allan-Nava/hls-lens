@@ -27,6 +27,21 @@ const SKIP_BOUNDARY_TARGETS = 6;
 const RENDITION_REPORT_SLACK = 1;
 
 /**
+ * What joins two parts of a compound key. It has to be a character an attribute value
+ * cannot contain — a GROUP-ID may legitimately have a space or a slash in it — and it
+ * is written as an escape rather than as the byte itself: a literal NUL in a source
+ * file is invisible in every diff and truncates the line in half the terminal tools
+ * that read it.
+ */
+const GROUP_KEY_SEPARATOR = '\u0000';
+/** The TYPE values EXT-X-MEDIA defines, which are also the attributes referencing them. */
+const RENDITION_TYPES = ['AUDIO', 'VIDEO', 'SUBTITLES', 'CLOSED-CAPTIONS'];
+
+function groupKey(type: string, groupId: string): string {
+  return `${type}${GROUP_KEY_SEPARATOR}${groupId}`;
+}
+
+/**
  * H.264 levels: the frame size in macroblocks and the macroblock rate each one
  * allows (ITU-T H.264 table A-1). The key is level_idc as it appears in the last
  * two hex digits of an avc1 codec string.
@@ -211,6 +226,70 @@ export const RULES: RuleDoc[] = [
     title: 'A rendition group has at most one default',
     rationale:
       'Two DEFAULT=YES renditions of the same type in the same group contradict each other; the spec allows one, and players resolve the conflict differently.',
+  },
+  {
+    id: 'master/rendition-missing-attributes',
+    severity: 'error',
+    scope: 'master',
+    title: 'Every EXT-X-MEDIA declares TYPE, GROUP-ID and NAME',
+    rationale:
+      'A variant resolves its alternate audio and subtitles by group name alone. A rendition missing the attributes that identify it cannot be resolved, and nothing fails loudly: the stream simply plays without the track.',
+  },
+  {
+    id: 'master/rendition-uri',
+    severity: 'error',
+    scope: 'master',
+    title: 'Subtitles are fetched, closed captions are carried in the video',
+    rationale:
+      'A subtitles rendition with no URI has nothing to fetch. Closed captions are the opposite: they ride inside the video stream, so a URI is forbidden and INSTREAM-ID is what names the caption service. Both mistakes produce a track a player offers and cannot show.',
+  },
+  {
+    id: 'master/rendition-forced',
+    severity: 'warning',
+    scope: 'master',
+    title: 'FORCED is only defined for subtitles',
+    rationale:
+      'FORCED marks the subtitle track a player shows even with subtitles switched off — the one that translates on-screen text. On an audio or video rendition it means nothing and players ignore it, which usually means the track was meant to be something else.',
+  },
+  {
+    id: 'master/rendition-default-not-autoselect',
+    severity: 'error',
+    scope: 'master',
+    title: 'A default rendition is one a player may select',
+    rationale:
+      'DEFAULT=YES with AUTOSELECT=NO says both "play this unless told otherwise" and "never pick this automatically". The spec requires AUTOSELECT=YES when DEFAULT=YES; which of the two a player honours is its own decision.',
+  },
+  {
+    id: 'master/rendition-duplicate-name',
+    severity: 'warning',
+    scope: 'master',
+    title: 'Two renditions of a group do not share a NAME',
+    rationale:
+      'NAME is what a player puts in its track picker. Two identical entries are indistinguishable to whoever has to choose, and which one they get depends on the order the player happened to read them in.',
+  },
+  {
+    id: 'master/audio-group-mixed-channels',
+    severity: 'hint',
+    scope: 'master',
+    title: 'One audio group, one channel count',
+    rationale:
+      'Renditions of a group are alternatives a player switches between freely. A group mixing stereo and 5.1 changes the mix under the viewer when they change language, and on some devices restarts the audio pipeline to do it.',
+  },
+  {
+    id: 'master/unused-group',
+    severity: 'warning',
+    scope: 'master',
+    title: 'Every rendition group is referenced by a variant',
+    rationale:
+      'A group no EXT-X-STREAM-INF names is never offered to anyone: the alternate audio is encoded, published and cached, and no player can reach it. It is the same rename as master/undefined-group, seen from the other side.',
+  },
+  {
+    id: 'master/inconsistent-groups',
+    severity: 'warning',
+    scope: 'master',
+    title: 'The variants reference the same groups as each other',
+    rationale:
+      'A player picks a rung on bandwidth alone. If one rung names an AUDIO group and another does not, whether the viewer has alternate audio becomes a function of their connection at that moment — and it changes mid-playback, which no log explains.',
   },
   {
     id: 'master/no-iframe-stream',
@@ -798,7 +877,7 @@ function checkMaster(pl: Playlist, add: Add): void {
   // Rendition groups, so a variant can be checked against what exists.
   const groups = new Map<string, { defaults: number; total: number; line: number }>();
   for (const r of pl.renditions) {
-    const key = `${r.type} ${r.groupId}`;
+    const key = groupKey(r.type, r.groupId);
     const g = groups.get(key) ?? { defaults: 0, total: 0, line: r.line };
     g.total++;
     if (r.isDefault) g.defaults++;
@@ -808,7 +887,7 @@ function checkMaster(pl: Playlist, add: Add): void {
     }
   }
   for (const [key, g] of groups) {
-    const [type, groupId] = key.split(' ');
+    const [type, groupId] = key.split(GROUP_KEY_SEPARATOR);
     if (g.defaults === 0) {
       add('master/group-no-default', g.line, `no rendition of the ${type} group "${groupId}" is DEFAULT=YES: which one plays is up to the player`, 'mark exactly one rendition DEFAULT=YES');
     } else if (g.defaults > 1) {
@@ -847,7 +926,7 @@ function checkMaster(pl: Playlist, add: Add): void {
     ] as const) {
       if (!group || group.toUpperCase() === 'NONE') continue;
       const type = attr === 'CLOSED-CAPTIONS' ? 'CLOSED-CAPTIONS' : attr;
-      if (!groups.has(`${type} ${group}`)) {
+      if (!groups.has(groupKey(type, group))) {
         add('master/undefined-group', v.line, `${attr}="${group}" names a rendition group no EXT-X-MEDIA declares`, `add an EXT-X-MEDIA with TYPE=${type} and GROUP-ID="${group}", or fix the name`);
       }
     }
@@ -860,6 +939,7 @@ function checkMaster(pl: Playlist, add: Add): void {
     add('master/missing-uri', tag.line, 'this EXT-X-STREAM-INF is not followed by a variant playlist URI', 'put the variant playlist URI on the next line');
   }
 
+  checkRenditionGroups(pl, add);
   checkSessionData(pl, add);
   checkContentSteering(pl, add);
 
@@ -1282,6 +1362,157 @@ function checkDefines(pl: Playlist, add: Add): void {
       ref.line,
       `{$${ref.name}} is used here and no EXT-X-DEFINE declares "${ref.name}": the braces stay in the URI a player requests`,
       `add #EXT-X-DEFINE:NAME="${ref.name}",VALUE="…" above this line, or IMPORT it from the master`,
+    );
+  }
+}
+
+/**
+ * checkRenditionGroups reads EXT-X-MEDIA: the tag on its own, the group as a whole,
+ * and the groups against the variants that are supposed to use them.
+ *
+ * A rendition group is the one part of a master that a player resolves entirely by
+ * name, and nothing fails loudly when a name is wrong: the stream plays without the
+ * alternate audio, or offers a subtitle track it cannot fetch. The viewer reports
+ * "no Italian audio" for a manifest that looks perfectly well formed.
+ */
+function checkRenditionGroups(pl: Playlist, add: Add): void {
+  const names = new Map<string, number>();
+  const channels = new Map<string, { count: string; line: number }>();
+
+  for (const r of pl.renditions) {
+    const label = r.name || r.groupId || `line ${r.line + 1}`;
+
+    const missing = [
+      r.type === '' ? 'TYPE' : RENDITION_TYPES.includes(r.type) ? '' : `a TYPE of ${RENDITION_TYPES.join(', ')} (not "${r.type}")`,
+      r.groupId === '' ? 'GROUP-ID' : '',
+      r.name === '' ? 'NAME' : '',
+    ].filter(Boolean);
+    if (missing.length > 0) {
+      add(
+        'master/rendition-missing-attributes',
+        r.line,
+        `the rendition "${label}" needs ${missing.join(', ')}`,
+        'TYPE, GROUP-ID and NAME are what a variant resolves a rendition by: without them it resolves to nothing',
+      );
+    }
+
+    if (r.type === 'SUBTITLES' && !r.uri) {
+      add(
+        'master/rendition-uri',
+        r.line,
+        `the subtitles rendition "${label}" declares no URI: there is no subtitle playlist to fetch`,
+        'add URI, pointing at the WebVTT or IMSC playlist',
+      );
+    }
+    if (r.type === 'CLOSED-CAPTIONS') {
+      // Captions ride inside the video stream: there is nothing to fetch, and
+      // INSTREAM-ID is what says which caption service in the stream this is.
+      if (r.uri) {
+        add(
+          'master/rendition-uri',
+          r.line,
+          `the closed-captions rendition "${label}" declares a URI, which the spec forbids: captions are carried in the video stream, not fetched`,
+          'drop URI and name the caption service with INSTREAM-ID',
+        );
+      }
+      if (!r.attrs.get('INSTREAM-ID')) {
+        add(
+          'master/rendition-uri',
+          r.line,
+          `the closed-captions rendition "${label}" declares no INSTREAM-ID: nothing says which caption service in the stream it is`,
+          'add INSTREAM-ID, e.g. CC1 or SERVICE1',
+        );
+      }
+    }
+
+    if (r.forced && r.type !== 'SUBTITLES') {
+      add(
+        'master/rendition-forced',
+        r.line,
+        `FORCED=YES on the ${r.type || 'untyped'} rendition "${label}": FORCED is only defined for subtitles`,
+        'players ignore it here, so this is either a copy-paste or a track that was meant to be subtitles',
+      );
+    }
+
+    if (r.isDefault && (r.attrs.get('AUTOSELECT') ?? '').toUpperCase() === 'NO') {
+      add(
+        'master/rendition-default-not-autoselect',
+        r.line,
+        `the rendition "${label}" is DEFAULT=YES and AUTOSELECT=NO: the one to play unless told otherwise, and the one never to pick automatically`,
+        'the spec requires AUTOSELECT=YES when DEFAULT=YES',
+      );
+    }
+
+    const nameKey = `${groupKey(r.type, r.groupId)}${GROUP_KEY_SEPARATOR}${r.name}`;
+    if (r.name !== '') {
+      const first = names.get(nameKey);
+      if (first !== undefined) {
+        add(
+          'master/rendition-duplicate-name',
+          r.line,
+          `"${r.name}" is already the name of a rendition in the ${r.type} group "${r.groupId}", on line ${first + 1}`,
+          'NAME is what a player shows in its track picker: two identical entries are indistinguishable to whoever has to choose between them',
+        );
+      } else {
+        names.set(nameKey, r.line);
+      }
+    }
+
+    if (r.type === 'AUDIO' && r.channels) {
+      // CHANNELS is a slash-separated list whose first field is the channel count.
+      const count = r.channels.split('/')[0].trim();
+      const key = groupKey(r.type, r.groupId);
+      const first = channels.get(key);
+      if (first === undefined) {
+        channels.set(key, { count, line: r.line });
+      } else if (first.count !== count) {
+        add(
+          'master/audio-group-mixed-channels',
+          r.line,
+          `the audio group "${r.groupId}" mixes ${first.count}-channel and ${count}-channel renditions (the first is on line ${first.line + 1})`,
+          'a player switches within a group freely, so a channel count that changes mid-stream changes the mix under the viewer',
+        );
+      }
+    }
+  }
+
+  // A group nothing points at: the mirror of master/undefined-group, and normally the
+  // same rename seen from the other side.
+  const referenced = new Set<string>();
+  for (const v of pl.variants) {
+    for (const type of RENDITION_TYPES) {
+      const group = v.attrs.get(type);
+      if (group !== undefined && group.toUpperCase() !== 'NONE') referenced.add(groupKey(type, group));
+    }
+  }
+  const reported = new Set<string>();
+  for (const r of pl.renditions) {
+    const key = groupKey(r.type, r.groupId);
+    if (r.groupId === '' || referenced.has(key) || reported.has(key)) continue;
+    reported.add(key);
+    add(
+      'master/unused-group',
+      r.line,
+      `no variant references the ${r.type || 'untyped'} group "${r.groupId}"`,
+      'either a variant should name it, or the group is left over from a rename and nothing will ever play it',
+    );
+  }
+
+  // Variants that disagree about which groups they use. A player picks a rung on
+  // bandwidth alone, so this makes having the alternate audio a function of the
+  // viewer's connection at that moment.
+  const playable = pl.variants.filter((v) => !v.iframeOnly);
+  if (playable.length < 2) return;
+  for (const type of RENDITION_TYPES) {
+    const first = playable[0].attrs.get(type);
+    const odd = playable.find((v) => v.attrs.get(type) !== first);
+    if (!odd) continue;
+    const declares = (value: string | undefined): string => (value === undefined ? `no ${type}` : `${type}="${value}"`);
+    add(
+      'master/inconsistent-groups',
+      odd.line,
+      `this variant declares ${declares(odd.attrs.get(type))} while the first variant declares ${declares(first)}`,
+      'every variant should reference the same groups: a player switching rungs on bandwidth would otherwise gain or lose a track mid-stream',
     );
   }
 }

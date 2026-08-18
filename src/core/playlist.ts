@@ -91,6 +91,8 @@ export interface Rendition {
   channels: string | null;
   uri: string | null;
   line: number;
+  /** The whole attribute list, for the attributes only one rule needs (INSTREAM-ID). */
+  attrs: Attrs;
 }
 
 /** What a playlist file turned out to be. */
@@ -534,6 +536,7 @@ function readRendition(tag: Tag): Rendition {
     channels: tag.attrs.get('CHANNELS') ?? null,
     uri: tag.attrs.get('URI') ?? null,
     line: tag.line,
+    attrs: tag.attrs,
   };
 }
 

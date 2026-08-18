@@ -3,6 +3,27 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.13.0] - 2026-08-18
+
+I gruppi di rendition: `EXT-X-MEDIA` letto da entrambi i lati. 73 → **81 regole**.
+
+### Aggiunto
+
+- **Otto regole `master/*` sui gruppi.** Un gruppo di rendition è l'unica parte di un master che un player risolve **per nome**, e quando il nome è sbagliato non fallisce niente ad alta voce: lo stream parte senza la traccia, e l'utente segnala "manca l'audio italiano" su un manifest che sembra a posto.
+  - `master/rendition-missing-attributes` (error): `EXT-X-MEDIA` senza `TYPE`, `GROUP-ID` o `NAME`, o con un `TYPE` che la spec non definisce.
+  - `master/rendition-uri` (error): subtitles senza `URI` — non c'è niente da scaricare — e il suo specchio, closed captions **con** un `URI` (la spec lo vieta: le caption viaggiano dentro il video) o senza `INSTREAM-ID`, che è ciò che dice quale servizio di caption sono.
+  - `master/rendition-forced` (warning): `FORCED=YES` su qualcosa che non è subtitles. Lì non significa niente e i player lo ignorano, quindi di solito è una traccia che doveva essere altro.
+  - `master/rendition-default-not-autoselect` (error): `DEFAULT=YES` con `AUTOSELECT=NO` — "questa a meno che non ti dicano altro" e "questa mai automaticamente" insieme. **`AUTOSELECT` assente non viene trattato come `NO`**: solo il "no" esplicito contraddice il default, ed è l'unico caso segnalato.
+  - `master/rendition-duplicate-name` (warning): due voci identiche nel selettore tracce del player, e quale ti tocca dipende dall'ordine in cui le ha lette.
+  - `master/audio-group-mixed-channels` (hint): un gruppo che mescola stereo e 5.1. Un player switcha dentro un gruppo liberamente, quindi cambiare lingua cambia il mix sotto lo spettatore.
+  - `master/unused-group` (warning): lo specchio di `master/undefined-group` — un gruppo che nessuna variant nomina è codificato, pubblicato e cachato, e nessun player lo raggiunge. È la stessa rinomina vista dall'altro lato.
+  - `master/inconsistent-groups` (warning): variant che non referenziano gli stessi gruppi. È quella che produce le segnalazioni più strane: un player sceglie il rung sulla banda, quindi avere l'audio alternativo diventa funzione della connessione in quel momento, e cambia a metà riproduzione. Sulla fixture `master-broken` se ne accendono due, sui gruppi `SUBTITLES` e `AUDIO`.
+- **`Rendition.attrs`**: l'attribute list completa, per gli attributi che servono a una sola regola (`INSTREAM-ID`, `AUTOSELECT` esplicito).
+
+### Modificato
+
+- **Il separatore delle chiavi composte è ora `GROUP_KEY_SEPARATOR = '\u0000'`**, una costante con nome. Era già un NUL, ma scritto come **byte letterale** dentro il sorgente: invisibile in un diff, e `sed`/`awk` troncano la riga quando lo incontrano — mi è costato una ricerca a vuoto cercando un bug che non c'era.
+
 ## [0.12.0] - 2026-08-18
 
 Il resto del vocabolario: i quattro tag che il parser conosceva e nessuna regola guardava. 67 → **73 regole**.
@@ -253,6 +274,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.13.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.13.0
 [0.12.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.12.0
 [0.11.1]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.11.1
 [0.11.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.11.0

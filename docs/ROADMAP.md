@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**28 of 28 items done** · `██████████` 100%
+**31 of 31 items done** · `██████████` 100%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -24,6 +24,7 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [v0.10.0 — Low latency](#v0100--low-latency) | ✅ shipped | 4/4 |
 | [v0.11.0 — Timeline](#v0110--timeline) | ✅ shipped | 1/1 |
 | [v0.12.0 — The rest of the vocabulary](#v0120--the-rest-of-the-vocabulary) | ✅ shipped | 3/3 |
+| [v0.13.0 — Rendition groups](#v0130--rendition-groups) | ✅ shipped | 3/3 |
 
 ## v0.1.0 — Reading manifests
 
@@ -142,3 +143,13 @@ Six rules on the four tags nothing was reading, and the variable substitution th
 - [x] **HL-25 — `syntax/define-malformed` and `syntax/undefined-variable`**: the parser now **substitutes** the variables (`Playlist.variables`, `defines`, `variableRefs`), so the rules, the tree and the document links all see the URI that will be requested. A `{$name}` nothing declares is left written as it is — braces included, which is exactly what a player asks for — and reported on the line that uses it. On the declaration side: a `NAME` with no `VALUE`, two sources for one value, the same name twice, and `IMPORT` in a master, which has nothing to import from.
 - [x] **HL-26 — `master/session-data` and `cross/session-key-mismatch`**: session data with neither `VALUE` nor `URI` (no datum) or with both (two answers), and two entries sharing `DATA-ID` and `LANGUAGE`. The session key half turned out to belong in `crosscheck.ts` and not in `master/*`: `EXT-X-SESSION-KEY` is in the master and the `EXT-X-KEY` it promises is in the renditions, so the comparison needs both files. `analyzeAcross` takes an optional `master` for it.
 - [x] **HL-27 — `master/content-steering` and `media/start-offset`**: steering with no `SERVER-URI`, a second steering tag, and a `PATHWAY-ID` no variant belongs to. `EXT-X-START` with no `TIME-OFFSET`, an offset outside the playlist (where players fall back to their own default, so the tag does nothing), and a negative offset inside the three target durations a player buffers before it starts.
+
+## v0.13.0 — Rendition groups
+
+Eight rules on `EXT-X-MEDIA`, the one part of a master a player resolves entirely by name — and where nothing fails loudly when a name is wrong. 73 → 81.
+
+✅ shipped · 3 of 3 · `██████████`
+
+- [x] **HL-28 — The rendition on its own**: `master/rendition-missing-attributes` (no `TYPE`, `GROUP-ID` or `NAME`, or a `TYPE` the spec does not define), `master/rendition-uri` (subtitles with no `URI`, and its mirror: closed captions with a `URI`, which the spec forbids, or with no `INSTREAM-ID`) and `master/rendition-forced` (`FORCED=YES` on anything that is not subtitles).
+- [x] **HL-29 — The group as a whole**: `master/rendition-default-not-autoselect` (`DEFAULT=YES` with `AUTOSELECT=NO` — play this unless told otherwise, and never pick it automatically), `master/rendition-duplicate-name` (two identical entries in a player's track picker) and `master/audio-group-mixed-channels` (a group that mixes stereo and 5.1, so changing language changes the mix).
+- [x] **HL-30 — The groups against the variants**: `master/unused-group`, the mirror of `master/undefined-group` — a group no variant names is encoded, published and cached and no player can reach it — and `master/inconsistent-groups`, variants that do not all reference the same groups, which makes having the alternate audio a function of the viewer's connection at that moment.
