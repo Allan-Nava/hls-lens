@@ -17,6 +17,9 @@ const SEVERITY_RANK: Record<Severity, number> = { error: 0, warning: 1, hint: 2 
 /** How far the timeline may fall short of @mediaPresentationDuration, in seconds. */
 const DURATION_TOLERANCE_S = 1;
 
+/** How far a period may start from where the previous one ended, in seconds. */
+const PERIOD_TOLERANCE_S = 0.5;
+
 /**
  * parseIsoDuration reads the ISO 8601 durations DASH writes (PT30S, PT1M30.5S,
  * P1DT2H3M4S). Years and months are deliberately not handled: they have no fixed
@@ -132,6 +135,8 @@ export function analyzeMpd(text: string): Finding[] {
     }
   }
 
+  checkPeriods(root, add);
+
   if (presentationDuration !== null && sawTimeline && timelineSeconds > 0) {
     const difference = presentationDuration - timelineSeconds;
     if (Math.abs(difference) > DURATION_TOLERANCE_S) {
@@ -151,6 +156,88 @@ export function analyzeMpd(text: string): Finding[] {
       ? SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity]
       : a.line - b.line || a.rule.localeCompare(b.rule),
   );
+}
+
+/**
+ * checkPeriods reads the periods against each other — the DASH equivalent of the
+ * cross/* category.
+ *
+ * A period is a boundary a player has to cross without stopping, and everything that
+ * makes crossing it expensive is invisible inside any single period: a codec that
+ * changes forces a decoder reset, a track that disappears is silence or a missing
+ * subtitle from that moment on, and a period that does not start where the previous
+ * one ended is a hole no <SegmentTimeline> can show.
+ */
+function checkPeriods(
+  root: XmlNode,
+  add: (rule: string, line: number, message: string, hint?: string) => void,
+): void {
+  const periods = findAll(root, 'Period');
+  if (periods.length < 2) return;
+
+  const label = (period: XmlNode, index: number): string => attr(period, 'id') ?? `#${index + 1}`;
+  const trackOf = (set: XmlNode): string => attr(set, 'contentType') ?? (attr(set, 'mimeType') ?? '').split('/')[0] ?? '';
+
+  // Which tracks the presentation has anywhere, so a period can be missing one.
+  const everyTrack = new Set<string>();
+  for (const period of periods) {
+    for (const set of findAll(period, 'AdaptationSet')) {
+      const track = trackOf(set);
+      if (track) everyTrack.add(track);
+    }
+  }
+
+  const codecsSeen = new Map<string, { codecs: string; period: string }>();
+  let expectedStart: number | null = null;
+
+  for (const [index, period] of periods.entries()) {
+    const name = label(period, index);
+    const tracks = new Set(findAll(period, 'AdaptationSet').map(trackOf).filter(Boolean));
+    for (const track of everyTrack) {
+      if (tracks.has(track)) continue;
+      add(
+        'dash/period-missing-track',
+        period.line,
+        `the period "${name}" has no ${track} adaptation set, and the other periods do`,
+        'a track that stops existing at a period boundary is silence, or a subtitle that disappears, from that point on',
+      );
+    }
+
+    for (const set of findAll(period, 'AdaptationSet')) {
+      for (const rep of findAll(set, 'Representation')) {
+        const id = attr(rep, 'id');
+        if (!id) continue;
+        const codecs = attr(rep, 'codecs') ?? attr(set, 'codecs') ?? '';
+        if (!codecs) continue;
+        const seen = codecsSeen.get(id);
+        if (seen === undefined) {
+          codecsSeen.set(id, { codecs, period: name });
+        } else if (seen.codecs !== codecs) {
+          add(
+            'dash/period-codecs-change',
+            rep.line,
+            `the representation "${id}" is ${codecs} in period "${name}" and ${seen.codecs} in period "${seen.period}"`,
+            'a player crossing the boundary has to reconfigure its decoder, which on many devices is a visible stall or a black frame',
+          );
+        }
+      }
+    }
+
+    const start = parseIsoDuration(attr(period, 'start'));
+    if (start !== null && expectedStart !== null && Math.abs(start - expectedStart) > PERIOD_TOLERANCE_S) {
+      const delta = round(start - expectedStart);
+      add(
+        'dash/period-not-contiguous',
+        period.line,
+        delta > 0
+          ? `the period "${name}" starts ${delta}s after the previous one ended (@start=${attr(period, 'start')}, expected ${round(expectedStart)}s)`
+          : `the period "${name}" starts ${round(-delta)}s before the previous one ended: the two overlap`,
+        'periods run back to back; a hole between them is media no player can request and no timeline shows',
+      );
+    }
+    const duration = parseIsoDuration(attr(period, 'duration'));
+    expectedStart = start !== null && duration !== null ? start + duration : duration !== null && expectedStart !== null ? expectedStart + duration : null;
+  }
 }
 
 /**

@@ -2,7 +2,7 @@
 
 # Rules
 
-HLS Lens ships 81 rules. Most read one manifest — the claims it makes — and point at the line you have to fix;
+HLS Lens ships 84 rules. Most read one manifest — the claims it makes — and point at the line you have to fix;
 the `cross/*` rules read the master and its renditions together and report on the variant line of the master.
 For the defects that need the segment bytes (a gap that no `EXT-X-DISCONTINUITY` declares, a 1080p rung that codes 720p),
 run the deep check, which brings [segcheck](https://github.com/Allan-Nava/segcheck) findings into the same Problems panel.
@@ -94,6 +94,9 @@ Ids are stable: they are what `hlsLens.diagnostics.skip` pins.
 | [`dash/missing-bandwidth`](#dashmissing-bandwidth) | error | Every representation declares @bandwidth |
 | [`dash/missing-codecs`](#dashmissing-codecs) | warning | Representations declare @codecs |
 | [`dash/segment-template-without-number`](#dashsegment-template-without-number) | error | A segment template addresses more than one segment |
+| [`dash/period-codecs-change`](#dashperiod-codecs-change) | warning | A representation keeps its codec across periods |
+| [`dash/period-missing-track`](#dashperiod-missing-track) | warning | Every period carries the same tracks |
+| [`dash/period-not-contiguous`](#dashperiod-not-contiguous) | error | Periods run back to back |
 | [`dash/segment-template-without-init`](#dashsegment-template-without-init) | warning | A segment template names an initialisation segment |
 
 ## Structure
@@ -595,6 +598,24 @@ Without @codecs — on the representation or inherited from the adaptation set �
 **A segment template addresses more than one segment** · error
 
 A @media template with neither $Number$ nor $Time$ resolves every segment to the same URL: the player fetches the first segment forever.
+
+### `dash/period-codecs-change`
+
+**A representation keeps its codec across periods** · warning
+
+A period boundary is a seam a player crosses without stopping. A representation whose @codecs changes across it forces the decoder to be reconfigured mid-presentation, which on many devices is a visible stall or a black frame — and no single period shows it.
+
+### `dash/period-missing-track`
+
+**Every period carries the same tracks** · warning
+
+A track that stops existing at a period boundary is silence, or a subtitle that disappears, from that point on. Players do not go looking for it in the next period, and the manifest that dropped it is valid.
+
+### `dash/period-not-contiguous`
+
+**Periods run back to back** · error
+
+Periods chain: one starts where the last one ended. A gap between them is media no player can request, and an overlap is two periods claiming the same seconds — neither is visible inside either period, or in any <SegmentTimeline>.
 
 ### `dash/segment-template-without-init`
 

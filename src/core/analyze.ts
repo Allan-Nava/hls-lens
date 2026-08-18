@@ -764,6 +764,30 @@ export const RULES: RuleDoc[] = [
       'A @media template with neither $Number$ nor $Time$ resolves every segment to the same URL: the player fetches the first segment forever.',
   },
   {
+    id: 'dash/period-codecs-change',
+    severity: 'warning',
+    scope: 'dash',
+    title: 'A representation keeps its codec across periods',
+    rationale:
+      'A period boundary is a seam a player crosses without stopping. A representation whose @codecs changes across it forces the decoder to be reconfigured mid-presentation, which on many devices is a visible stall or a black frame — and no single period shows it.',
+  },
+  {
+    id: 'dash/period-missing-track',
+    severity: 'warning',
+    scope: 'dash',
+    title: 'Every period carries the same tracks',
+    rationale:
+      'A track that stops existing at a period boundary is silence, or a subtitle that disappears, from that point on. Players do not go looking for it in the next period, and the manifest that dropped it is valid.',
+  },
+  {
+    id: 'dash/period-not-contiguous',
+    severity: 'error',
+    scope: 'dash',
+    title: 'Periods run back to back',
+    rationale:
+      'Periods chain: one starts where the last one ended. A gap between them is media no player can request, and an overlap is two periods claiming the same seconds — neither is visible inside either period, or in any <SegmentTimeline>.',
+  },
+  {
     id: 'dash/segment-template-without-init',
     severity: 'warning',
     scope: 'dash',

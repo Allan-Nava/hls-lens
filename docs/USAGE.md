@@ -93,6 +93,8 @@ Nothing else is offered a fix. A missing `CODECS` string, a badly spaced ladder 
 rendition groups that came and went, and for a media playlist the version, the target duration, the
 segment count and an `EXT-X-ENDLIST` that arrived.
 
+It works on DASH too: open an `.mpd` and the other manifest is compared period by period, matching periods and representations by `@id`.
+
 Rungs are matched by **URI**, not by bitrate or by position. A packager keeps the path of a
 rendition stable far more often than it keeps its bitrate, so the URI is what tells *the same rung,
 re-rated* apart from *a new rung* — which is usually the whole question.
@@ -273,6 +275,9 @@ The defects are the same ones a playlist has: The same stream is usually package
 | `dash/adaptationset-not-aligned` | several representations with no `@segmentAlignment="true"`, so a player must assume it cannot switch |
 | `dash/segment-template-without-number` | a `@media` template with neither `$Number$` nor `$Time$`: every segment is the same URL |
 | `dash/not-an-mpd` | a `.mpd` that is an error page a CDN returned |
+| `dash/period-codecs-change` | a representation whose `@codecs` changes between periods: a decoder reset mid-presentation |
+| `dash/period-missing-track` | a period without a track the others have — silence, or a subtitle gone, from that boundary on |
+| `dash/period-not-contiguous` | a period that does not start where the previous one ended |
 
 The XML reader is part of the extension rather than a dependency, and it is deliberately narrow: elements, attributes and nesting. A manifest that needs entity expansion, DTDs or namespace resolution is reported rather than guessed at.
 

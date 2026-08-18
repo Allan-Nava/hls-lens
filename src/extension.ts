@@ -20,7 +20,7 @@ import { analyzeMpd } from './core/dash';
 import { buildMpdTree, mpdSummary, MpdRow } from './core/mpdtree';
 import { isManifestPath, renderWorkspaceReport, summariseWorkspace, WorkspaceEntry } from './core/workspace';
 import { renderFindingsJson, renderFindingsMarkdown } from './core/report';
-import { compareManifests, describeComparison } from './core/compare';
+import { compareManifests, compareMpds, describeComparison } from './core/compare';
 import { profileOverrides } from './core/profiles';
 import { buildTimeline, renderTimelineHtml, TimelineTrack } from './core/timeline';
 import { isRemote, looksLikePlaylistUri, resolveUri } from './core/uri';
@@ -884,10 +884,12 @@ async function checkTogether(): Promise<void> {
  */
 async function compareWith(): Promise<void> {
   const active = activeManifest();
-  if (!active) {
-    void vscode.window.showWarningMessage('HLS Lens: open a playlist to compare first.');
+  const mpd = activeMpdDocument();
+  if (!active && !mpd) {
+    void vscode.window.showWarningMessage('HLS Lens: open a playlist or an .mpd to compare first.');
     return;
   }
+  const location = active ? active.location : locationOf(mpd!);
   const other = await vscode.window.showInputBox({
     title: 'HLS Lens: compare with',
     prompt: 'Path or URL of the manifest to compare against (relative paths resolve against the open one)',
@@ -895,7 +897,7 @@ async function compareWith(): Promise<void> {
   });
   if (!other) return;
 
-  const resolved = resolveUri(active.location, other.trim());
+  const resolved = resolveUri(location, other.trim());
   let text: string;
   try {
     const config = vscode.workspace.getConfiguration('hlsLens');
@@ -914,9 +916,9 @@ async function compareWith(): Promise<void> {
 
   // The manifest that was there before is the other one; the open file is the state
   // being explained, so it is what the changes are reported against.
-  const changes = compareManifests(parsePlaylist(text), active.playlist);
+  const changes = active ? compareManifests(parsePlaylist(text), active.playlist) : compareMpds(text, mpd!.getText());
   output.appendLine('');
-  output.appendLine(`${resolved} → ${active.location}`);
+  output.appendLine(`${resolved} → ${location}`);
   for (const line of describeComparison(changes)) output.appendLine(`  ${line}`);
   output.show(true);
   void vscode.window.showInformationMessage(

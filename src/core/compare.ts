@@ -7,12 +7,23 @@
 // can read: a manifest is a set of declarations, not a sequence of lines, and the
 // interesting change is which declaration moved.
 import { formatBandwidth } from './ladder';
+import { parseIsoDuration } from './dash';
 import { Playlist, Variant } from './playlist';
+import { XmlNode, attr, findAll, parseXml } from './xml';
 
 /** One difference between two manifests. */
 export interface ManifestChange {
   kind:
     | 'kind'
+    | 'mpd-type'
+    | 'duration'
+    | 'period-added'
+    | 'period-removed'
+    | 'adaptation-set-added'
+    | 'adaptation-set-removed'
+    | 'representation-added'
+    | 'representation-removed'
+    | 'representation-changed'
     | 'rung-added'
     | 'rung-removed'
     | 'rung-changed'
@@ -43,6 +54,20 @@ export function compareManifests(before: Playlist, after: Playlist): ManifestCha
         kind: 'kind',
         label: 'playlist kind',
         detail: `${before.kind} → ${after.kind}`,
+        line: 0,
+      },
+    ];
+  }
+  // Two files that are not playlists have nothing in common that this function can
+  // read, and every branch below would skip them — which returns an empty list, and
+  // an empty list means "identical". Saying nothing here would be saying the wrong
+  // thing. (An .mpd lands exactly here: compareMpds is what reads those.)
+  if (before.kind === 'unknown') {
+    return [
+      {
+        kind: 'kind',
+        label: 'not a playlist',
+        detail: 'neither file parses as an HLS playlist, so they cannot be compared this way',
         line: 0,
       },
     ];
@@ -156,4 +181,116 @@ function marker(kind: ManifestChange['kind']): string {
   if (kind.endsWith('added')) return '+';
   if (kind.endsWith('removed')) return '-';
   return '~';
+}
+
+/**
+ * compareMpds is the same question asked of two DASH manifests: periods matched by
+ * @id (falling back to their order), adaptation sets by what they carry, and
+ * representations by @id — which is the DASH equivalent of matching HLS rungs by URI,
+ * and stable for the same reason.
+ */
+export function compareMpds(before: string, after: string): ManifestChange[] {
+  const a = parseXml(before).root;
+  const b = parseXml(after).root;
+  if (!a || !b || !/(^|:)MPD$/.test(a.name) || !/(^|:)MPD$/.test(b.name)) {
+    return [{ kind: 'kind', label: 'not an MPD', detail: 'one of the two files does not parse as a DASH manifest', line: 0 }];
+  }
+
+  const changes: ManifestChange[] = [];
+  const typeOf = (root: XmlNode): string => attr(root, 'type') ?? 'static';
+  if (typeOf(a) !== typeOf(b)) {
+    changes.push({ kind: 'mpd-type', label: '@type', detail: `${typeOf(a)} → ${typeOf(b)}`, line: b.line });
+  }
+  const durationA = parseIsoDuration(attr(a, 'mediaPresentationDuration'));
+  const durationB = parseIsoDuration(attr(b, 'mediaPresentationDuration'));
+  if (durationA !== durationB) {
+    changes.push({
+      kind: 'duration',
+      label: '@mediaPresentationDuration',
+      detail: `${durationA === null ? 'none' : `${durationA}s`} → ${durationB === null ? 'none' : `${durationB}s`}`,
+      line: b.line,
+    });
+  }
+
+  const periodsA = findAll(a, 'Period');
+  const periodsB = findAll(b, 'Period');
+  const keyOf = (period: XmlNode, index: number): string => attr(period, 'id') ?? `#${index + 1}`;
+  const beforePeriods = new Map(periodsA.map((p, i) => [keyOf(p, i), p]));
+  const afterPeriods = new Map(periodsB.map((p, i) => [keyOf(p, i), p]));
+
+  for (const [key] of beforePeriods) {
+    if (!afterPeriods.has(key)) changes.push({ kind: 'period-removed', label: `Period ${key}`, detail: 'gone', line: -1 });
+  }
+  for (const [key, period] of afterPeriods) {
+    const was = beforePeriods.get(key);
+    if (!was) {
+      changes.push({ kind: 'period-added', label: `Period ${key}`, detail: `${findAll(period, 'Representation').length} representations`, line: period.line });
+      continue;
+    }
+    comparePeriod(was, period, key, changes);
+  }
+  return changes;
+}
+
+function comparePeriod(before: XmlNode, after: XmlNode, periodKey: string, changes: ManifestChange[]): void {
+  const setKey = (set: XmlNode, index: number): string =>
+    attr(set, 'contentType') ?? attr(set, 'mimeType') ?? attr(set, 'id') ?? `#${index + 1}`;
+  const beforeSets = new Map(findAll(before, 'AdaptationSet').map((set, i) => [setKey(set, i), set]));
+  const afterSets = new Map(findAll(after, 'AdaptationSet').map((set, i) => [setKey(set, i), set]));
+
+  for (const [key] of beforeSets) {
+    if (!afterSets.has(key)) {
+      changes.push({ kind: 'adaptation-set-removed', label: `${periodKey} · ${key}`, detail: 'the whole track is gone', line: -1 });
+    }
+  }
+  for (const [key, set] of afterSets) {
+    const was = beforeSets.get(key);
+    if (!was) {
+      changes.push({ kind: 'adaptation-set-added', label: `${periodKey} · ${key}`, detail: 'a new track', line: set.line });
+      continue;
+    }
+    compareRepresentations(was, set, changes);
+  }
+}
+
+function compareRepresentations(before: XmlNode, after: XmlNode, changes: ManifestChange[]): void {
+  const repKey = (rep: XmlNode, index: number): string => attr(rep, 'id') ?? `#${index + 1}`;
+  const beforeReps = new Map(findAll(before, 'Representation').map((rep, i) => [repKey(rep, i), rep]));
+  const afterReps = new Map(findAll(after, 'Representation').map((rep, i) => [repKey(rep, i), rep]));
+
+  for (const [key, rep] of beforeReps) {
+    if (!afterReps.has(key)) {
+      changes.push({ kind: 'representation-removed', label: key, detail: describeRepresentation(rep), line: -1 });
+    }
+  }
+  for (const [key, rep] of afterReps) {
+    const was = beforeReps.get(key);
+    if (!was) {
+      changes.push({ kind: 'representation-added', label: key, detail: describeRepresentation(rep), line: rep.line });
+      continue;
+    }
+    const differences = [
+      bandwidthOf(was) !== bandwidthOf(rep) ? `${formatBandwidth(bandwidthOf(was))} → ${formatBandwidth(bandwidthOf(rep))}` : '',
+      sizeOf(was) !== sizeOf(rep) ? `${sizeOf(was)} → ${sizeOf(rep)}` : '',
+      (attr(was, 'codecs') ?? '') !== (attr(rep, 'codecs') ?? '') ? `${attr(was, 'codecs') ?? '—'} → ${attr(rep, 'codecs') ?? '—'}` : '',
+    ].filter(Boolean);
+    if (differences.length > 0) {
+      changes.push({ kind: 'representation-changed', label: key, detail: differences.join(' · '), line: rep.line });
+    }
+  }
+}
+
+function describeRepresentation(rep: XmlNode): string {
+  return [formatBandwidth(bandwidthOf(rep)), sizeOf(rep), attr(rep, 'codecs') ?? ''].filter((part) => part && part !== '—').join(' · ');
+}
+
+function bandwidthOf(rep: XmlNode): number | null {
+  const value = Number.parseInt(attr(rep, 'bandwidth') ?? '', 10);
+  return Number.isFinite(value) ? value : null;
+}
+
+function sizeOf(rep: XmlNode): string {
+  const width = attr(rep, 'width');
+  const height = attr(rep, 'height');
+  return width && height ? `${width}x${height}` : '—';
 }

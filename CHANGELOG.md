@@ -3,6 +3,22 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.19.0] - 2026-08-18
+
+DASH smette di essere di seconda classe nel confronto, e i periodi cominciano a essere letti l'uno contro l'altro. 81 → **84 regole**.
+
+### Corretto
+
+- **Due documenti che non sono playlist non vengono più dichiarati identici.** `compareManifests` su due file con `kind: 'unknown'` non faceva partire nessun ramo del confronto e tornava una lista vuota, che si legge come *"i due manifest dichiarano la stessa cosa"*. Dalla UI non era raggiungibile, ma una risposta silenziosamente sbagliata nel core è peggio di un errore: ora dice che non sa confrontarli.
+
+### Aggiunto
+
+- **`compareMpds`**: due manifest DASH confrontati per davvero — periodi appaiati per `@id` (con l'ordine come ripiego), adaptation set per quello che trasportano, representation per `@id`. È l'equivalente DASH dell'appaiare i rung HLS per URI, ed è stabile per lo stesso motivo. Confronta anche `@type` e `@mediaPresentationDuration`. `Compare With…` ora parte anche con un `.mpd` aperto.
+- **Tre regole `dash/*` cross-periodo**, la controparte DASH della categoria `cross/*`. Un confine di periodo è una cucitura che il player attraversa senza fermarsi, e tutto ciò che rende cara la traversata è invisibile *dentro* un singolo periodo:
+  - `dash/period-codecs-change` (warning): una representation il cui `@codecs` cambia da un periodo all'altro obbliga a riconfigurare il decoder a metà presentazione — su molti dispositivi è uno stallo visibile o un frame nero.
+  - `dash/period-missing-track` (warning): una traccia che smette di esistere a un confine è silenzio, o un sottotitolo che sparisce, da lì in poi. Il player non va a cercarla nel periodo dopo, e il manifest che l'ha persa è valido.
+  - `dash/period-not-contiguous` (error): i periodi si concatenano. Un buco è media che nessun player può chiedere, una sovrapposizione sono due periodi che rivendicano gli stessi secondi, e nessuna `<SegmentTimeline>` mostra né l'uno né l'altra.
+
 ## [0.18.2] - 2026-08-18
 
 Nessun codice: la milestone successiva, aperta dove le milestone si aprono.
@@ -367,6 +383,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.19.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.19.0
 [0.18.2]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.18.2
 [0.18.1]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.18.1
 [0.18.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.18.0

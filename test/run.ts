@@ -23,7 +23,7 @@ import { frontMatter, renderMarkdown, renderPage, pageTitle } from '../src/core/
 import { buildTimeline, niceTicks, renderTimelineHtml } from '../src/core/timeline';
 import { isManifestPath, summariseWorkspace, renderWorkspaceReport } from '../src/core/workspace';
 import { renderFindingsMarkdown, renderFindingsJson } from '../src/core/report';
-import { compareManifests, describeComparison } from '../src/core/compare';
+import { compareManifests, compareMpds, describeComparison } from '../src/core/compare';
 import { profileOverrides } from '../src/core/profiles';
 import { analyze, RULES, Finding, Severity, applySeverityOverrides } from '../src/core/analyze';
 import { buildLadder, renditionRows, ladderSummary, formatBandwidth, formatResolution, lowLatencyRows } from '../src/core/ladder';
@@ -1923,6 +1923,154 @@ async function main(): Promise<void> {
     assert.strictEqual(rows.filter((r) => r.kind === 'part').length, 5);
     const note = rows.find((r) => r.kind === 'note');
     assert.ok(note && note.label.includes('55 more'), JSON.stringify(note));
+  });
+
+  // ------------------------------------------------------- comparing two MPDs
+  const MPD_A = [
+    '<MPD type="static" mediaPresentationDuration="PT10M">',
+    '  <Period id="main" start="PT0S">',
+    '    <AdaptationSet contentType="video" segmentAlignment="true">',
+    '      <Representation id="1080p" bandwidth="6100000" width="1920" height="1080" codecs="avc1.640028"/>',
+    '      <Representation id="720p" bandwidth="3300000" width="1280" height="720" codecs="avc1.4d4028"/>',
+    '    </AdaptationSet>',
+    '    <AdaptationSet contentType="audio" lang="en">',
+    '      <Representation id="aac" bandwidth="128000" codecs="mp4a.40.2"/>',
+    '    </AdaptationSet>',
+    '  </Period>',
+    '</MPD>',
+  ].join('\n');
+
+  await test('two MPDs are compared period by period, rung by rung', () => {
+    const after = MPD_A.replace('bandwidth="3300000"', 'bandwidth="2900000"').replace(
+      '      <Representation id="aac" bandwidth="128000" codecs="mp4a.40.2"/>\n',
+      '',
+    );
+    const changes = compareMpds(MPD_A, after);
+    const labels = changes.map((c) => `${c.kind}:${c.label}`);
+    assert.ok(
+      labels.some((l) => l.startsWith('representation-changed:720p')),
+      JSON.stringify(labels),
+    );
+    assert.ok(
+      changes.some((c) => c.kind === 'representation-changed' && c.detail.includes('3.30 Mbps → 2.90 Mbps')),
+      JSON.stringify(changes),
+    );
+    assert.ok(
+      labels.some((l) => l.startsWith('representation-removed:aac')),
+      JSON.stringify(labels),
+    );
+  });
+
+  await test('a period or a whole track that came or went is named', () => {
+    const withoutAudio = MPD_A.replace(/ *<AdaptationSet contentType="audio"[\s\S]*?<\/AdaptationSet>\n/, '');
+    assert.ok(
+      compareMpds(MPD_A, withoutAudio).some((c) => c.kind === 'adaptation-set-removed'),
+      JSON.stringify(compareMpds(MPD_A, withoutAudio)),
+    );
+
+    const twoPeriods = MPD_A.replace('</MPD>', '  <Period id="ad" start="PT10M"/>\n</MPD>');
+    assert.ok(compareMpds(MPD_A, twoPeriods).some((c) => c.kind === 'period-added' && c.label.includes('ad')));
+
+    // The manifest-level declarations are compared too.
+    const live = MPD_A.replace('type="static" mediaPresentationDuration="PT10M"', 'type="dynamic"');
+    const kinds = compareMpds(MPD_A, live).map((c) => c.kind);
+    assert.ok(kinds.includes('mpd-type'), JSON.stringify(kinds));
+    assert.ok(kinds.includes('duration'), JSON.stringify(kinds));
+  });
+
+  await test('an MPD compared with itself finds nothing to say', () => {
+    assert.deepStrictEqual(compareMpds(MPD_A, MPD_A), []);
+  });
+
+  await test('two files that are neither playlists nor MPDs are not called identical', () => {
+    // Two unknown documents used to compare equal, because no branch of the
+    // comparison ran and an empty result reads as "the same thing".
+    const changes = compareManifests(parsePlaylist('<html>404</html>'), parsePlaylist('<html>410</html>'));
+    assert.deepStrictEqual(
+      changes.map((c) => c.kind),
+      ['kind'],
+    );
+    assert.ok(/cannot/i.test(changes[0].detail), changes[0].detail);
+  });
+
+  // ------------------------------------------------------ cross-period rules
+  const twoPeriods = (second: string): string =>
+    [
+      '<MPD type="static" mediaPresentationDuration="PT20S">',
+      '  <Period id="p0" start="PT0S" duration="PT10S">',
+      '    <AdaptationSet contentType="video" segmentAlignment="true">',
+      '      <Representation id="v0" bandwidth="4800000" codecs="avc1.640028" width="1920" height="1080"/>',
+      '    </AdaptationSet>',
+      '    <AdaptationSet contentType="audio" segmentAlignment="true">',
+      '      <Representation id="a0" bandwidth="128000" codecs="mp4a.40.2"/>',
+      '    </AdaptationSet>',
+      '  </Period>',
+      second,
+      '</MPD>',
+    ].join('\n');
+
+  await test('a codec that changes between periods is reported', () => {
+    const changed = twoPeriods(
+      [
+        '  <Period id="p1" start="PT10S" duration="PT10S">',
+        '    <AdaptationSet contentType="video" segmentAlignment="true">',
+        '      <Representation id="v0" bandwidth="4800000" codecs="hvc1.1.6.L93.B0" width="1920" height="1080"/>',
+        '    </AdaptationSet>',
+        '    <AdaptationSet contentType="audio" segmentAlignment="true">',
+        '      <Representation id="a0" bandwidth="128000" codecs="mp4a.40.2"/>',
+        '    </AdaptationSet>',
+        '  </Period>',
+      ].join('\n'),
+    );
+    assert.ok(analyzeMpd(changed).map((f) => f.rule).includes('dash/period-codecs-change'));
+  });
+
+  await test('a period missing a track the others have is reported', () => {
+    const missing = twoPeriods(
+      [
+        '  <Period id="p1" start="PT10S" duration="PT10S">',
+        '    <AdaptationSet contentType="video" segmentAlignment="true">',
+        '      <Representation id="v0" bandwidth="4800000" codecs="avc1.640028" width="1920" height="1080"/>',
+        '    </AdaptationSet>',
+        '  </Period>',
+      ].join('\n'),
+    );
+    const found = analyzeMpd(missing).filter((f) => f.rule === 'dash/period-missing-track');
+    assert.strictEqual(found.length, 1);
+    assert.ok(found[0].message.includes('audio'), found[0].message);
+  });
+
+  await test('periods that do not chain leave a gap nothing else shows', () => {
+    const gap = twoPeriods(
+      [
+        '  <Period id="p1" start="PT15S" duration="PT5S">',
+        '    <AdaptationSet contentType="video" segmentAlignment="true">',
+        '      <Representation id="v0" bandwidth="4800000" codecs="avc1.640028" width="1920" height="1080"/>',
+        '    </AdaptationSet>',
+        '    <AdaptationSet contentType="audio" segmentAlignment="true">',
+        '      <Representation id="a0" bandwidth="128000" codecs="mp4a.40.2"/>',
+        '    </AdaptationSet>',
+        '  </Period>',
+      ].join('\n'),
+    );
+    const found = analyzeMpd(gap).filter((f) => f.rule === 'dash/period-not-contiguous');
+    assert.strictEqual(found.length, 1);
+    assert.ok(found[0].message.includes('5'), found[0].message);
+
+    // A period that starts exactly where the previous one ended is the normal case.
+    const contiguous = twoPeriods(
+      [
+        '  <Period id="p1" start="PT10S" duration="PT10S">',
+        '    <AdaptationSet contentType="video" segmentAlignment="true">',
+        '      <Representation id="v0" bandwidth="4800000" codecs="avc1.640028" width="1920" height="1080"/>',
+        '    </AdaptationSet>',
+        '    <AdaptationSet contentType="audio" segmentAlignment="true">',
+        '      <Representation id="a0" bandwidth="128000" codecs="mp4a.40.2"/>',
+        '    </AdaptationSet>',
+        '  </Period>',
+      ].join('\n'),
+    );
+    assert.deepStrictEqual(analyzeMpd(contiguous).filter((f) => f.rule === 'dash/period-not-contiguous'), []);
   });
 
   // ------------------------------------------------------------------- compare

@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**39 of 43 items done** · `█████████░` 91%
+**41 of 43 items done** · `█████████░` 95%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -30,7 +30,8 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [v0.16.0 — Grading and fixing](#v0160--grading-and-fixing) | ✅ shipped | 2/2 |
 | [v0.17.0 — Sending it to someone](#v0170--sending-it-to-someone) | ✅ shipped | 2/2 |
 | [v0.18.0 — Against another manifest](#v0180--against-another-manifest) | ✅ shipped | 2/2 |
-| [DASH, all the way](#dash-all-the-way) | ⏳ planned | 0/4 |
+| [DASH, all the way](#dash-all-the-way) | ⏳ planned | 0/2 |
+| [v0.19.0 — DASH compared, and across periods](#v0190--dash-compared-and-across-periods) | ✅ shipped | 2/2 |
 
 ## v0.1.0 — Reading manifests
 
@@ -207,9 +208,14 @@ The Problems panel is where a defect is fixed, not where it is argued about with
 
 DASH has rules, a tree and a status bar, and stops there. Every feature added since v0.11.0 — the timeline, the comparison, the links, the hover — was built for HLS and quietly does nothing, or the wrong thing, for an `.mpd`.
 
-⏳ planned · 0 of 4 · `░░░░░░░░░░`
+⏳ planned · 0 of 2 · `░░░░░░░░░░`
 
-- [ ] **HL-39 — Compare two MPDs**: `compareManifests` today answers `the two manifests declare the same thing` for two completely different MPDs. It is not reachable from the UI — `Compare With…` refuses to run unless a playlist is open — but the core is one caller away from a **silently wrong answer**, which is worse than an error. Two parts: make an unknown/unknown pair say it cannot compare them, and then actually compare them (periods, adaptation sets, representations, `@mediaPresentationDuration`).
 - [ ] **HL-40 — The timeline for an MPD**: `buildTimeline` takes parsed playlists, so a DASH manifest gets no strip at all. A `<SegmentTimeline>` is exactly the shape the timeline was built to draw — `<S>` elements with `@d` and `@r` are segments with durations — and the periods are the discontinuities.
 - [ ] **HL-41 — Document links and hover in an MPD**: `BaseURL`, `UTCTiming@value` and `@initialization` are the URLs an operator wants to follow, and `$Number$`/`$Time$` templates are worth showing resolved for the first segment. The hover needs a DASH vocabulary in `spec.ts` the way HLS has one — the elements and attributes with what they mean and what values they take.
-- [ ] **HL-42 — Cross-period `dash/*` rules**: the DASH equivalent of the `cross/*` category. A representation whose `@codecs` or `@height` changes between periods forces a decoder reset mid-presentation; a period missing an adaptation set the others have loses that track at the boundary; `@presentationTimeOffset` that does not chain leaves a gap no single period shows.
+
+## v0.19.0 — DASH compared, and across periods
+
+✅ shipped · 2 of 2 · `██████████`
+
+- [x] **HL-39 — Compare two MPDs**: `compareMpds` matches periods by `@id`, adaptation sets by what they carry and representations by `@id` — the DASH equivalent of matching HLS rungs by URI, stable for the same reason — and reports `@type` and `@mediaPresentationDuration` too. `Compare With…` now runs on an open `.mpd`. The defect this item was opened for is fixed at the source: **two documents that are neither playlists now say they cannot be compared**, instead of returning an empty list that reads as "identical".
+- [x] **HL-42 — Cross-period `dash/*` rules**: `dash/period-codecs-change` (a decoder reconfigured mid-presentation, which on many devices is a visible stall), `dash/period-missing-track` (a track that stops existing at a boundary is silence, or a subtitle that disappears, from that point on) and `dash/period-not-contiguous` (periods chain; a hole between them is media no player can request). 81 → 84.
