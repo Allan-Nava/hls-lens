@@ -165,16 +165,6 @@ because every rule judges one manifest.
 - [x] **HL-39 — Compare two MPDs**: `compareMpds` matches periods by `@id`, adaptation sets by what they carry and representations by `@id` — the DASH equivalent of matching HLS rungs by URI, stable for the same reason — and reports `@type` and `@mediaPresentationDuration` too. `Compare With…` now runs on an open `.mpd`. The defect this item was opened for is fixed at the source: **two documents that are neither playlists now say they cannot be compared**, instead of returning an empty list that reads as "identical".
 - [x] **HL-42 — Cross-period `dash/*` rules**: `dash/period-codecs-change` (a decoder reconfigured mid-presentation, which on many devices is a visible stall), `dash/period-missing-track` (a track that stops existing at a boundary is silence, or a subtitle that disappears, from that point on) and `dash/period-not-contiguous` (periods chain; a hole between them is media no player can request). 81 → 84.
 
-## The extension's interface
-
-Twelve commands, 84 rules and one webview, and no way to discover any of it: the tree
-shows everything at once or nothing, the timeline is a snapshot you re-run by hand, and
-the only navigation goes one way — from a row to a line, never back. This is the half
-of the extension that is glue by design, so each item names the piece of it that is
-logic and therefore gets a test.
-
-- [ ] **HL-45 — A timeline that follows the stream**: the panel re-renders on each poll of `Watch Live Playlist` instead of being a snapshot re-run by hand, with the live edge marked and a zoom to a time range for a window with hundreds of segments. `buildTimeline` gains a range option and the marking of the edge, both tested; the panel plumbing is glue. The bars are already buttons — they need the labels that make them usable without a mouse.
-- [ ] **HL-46 — Navigation that goes both ways**: clicking a tree row reveals its line, and nothing does the reverse. `rowForLine` in the core answers "which row owns this line" and lets the tree follow the cursor, which is how a finding on line 4000 of a live playlist becomes findable at all.
 
 ## v0.20.0 — The glue under test
 
@@ -196,3 +186,10 @@ The first half of `The extension's interface`: being discoverable, and not being
 
 - [x] **HL-43 — A first run that explains itself**: `contributes.walkthroughs` with four steps — open a manifest, read the shape of the stream, look at more than one file, make the rules yours — each with its own markdown. The logic-free half of the item still gets a test: **every `command:` link in the walkthrough is checked against the commands `activate` registers**, in the steps and in the markdown files, because a walkthrough is the first thing a new user clicks and a dead link there does nothing at all, silently.
 - [x] **HL-44 — A tree you can filter**: `src/core/tree.ts` holds the two rules that make a filtered tree usable — a row survives if it or anything under it matches (otherwise searching for a segment URI hides the section containing it), and a row that matches on its own keeps all its children (otherwise filtering for "variants" gives an empty section header). The description is searched as well as the label, because that is where the numbers are. The filter states itself as the first row and clears itself when clicked: a view that looks empty for no reason is worse than one that says why. A severity filter sits next to it. Both are driven end to end in a test, now that the glue can be.
+
+## v0.23.0 — The timeline moves, and the tree follows
+
+The rest of `The extension's interface`: the milestone is closed.
+
+- [x] **HL-45 — A timeline that follows the stream**: the panel redraws on every poll of `Watch Live Playlist` instead of being a snapshot re-run by hand — a picture of a live window is out of date by the time it is drawn. `buildTimeline` gained a **live edge** (where a stream that has not ended currently stops, which is a different thing from where an asset finishes: `null` for VOD, and a dynamic MPD gets one too) and a **range**, so a window of hundreds of segments can be drawn as its last minute; segments straddling the edge of the window are kept, because a segment half in view is still what a viewer is watching. The bars carry `aria-label`, so the picture is usable without a mouse.
+- [x] **HL-46 — Navigation that goes both ways**: `rowForLine` answers which row owns a line — and a tag and the URI under it are **one** row, because they are one thing. The view is now a `TreeView` with `getParent`, so it can reveal a row nobody has expanded yet; the cursor moving in the editor selects the matching row and **never takes focus**, because a view that steals focus while you scroll is worse than one that does nothing. A line no row owns reveals nothing rather than the nearest thing.

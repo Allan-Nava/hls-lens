@@ -229,6 +229,8 @@ export const recorded = {
   commands: new Map<string, (...args: unknown[]) => unknown>(),
   collections: new Map<string, FakeDiagnosticCollection>(),
   treeProviders: new Map<string, unknown>(),
+  revealed: [] as unknown[],
+  selectionListeners: [] as Array<(event: unknown) => void>,
   linkProviders: [] as Array<{ language: string; provider: unknown }>,
   hoverProviders: [] as Array<{ language: string; provider: unknown }>,
   completionProviders: [] as Array<{ language: string; provider: unknown }>,
@@ -249,6 +251,8 @@ export function resetRecorded(): void {
   recorded.commands.clear();
   recorded.collections.clear();
   recorded.treeProviders.clear();
+  recorded.revealed.length = 0;
+  recorded.selectionListeners.length = 0;
   recorded.linkProviders.length = 0;
   recorded.hoverProviders.length = 0;
   recorded.completionProviders.length = 0;
@@ -342,6 +346,21 @@ export const window = {
   },
   registerTreeDataProvider(id: string, provider: unknown): Disposable {
     recorded.treeProviders.set(id, provider);
+    return noopDisposable;
+  },
+  createTreeView(id: string, options: { treeDataProvider: unknown }) {
+    recorded.treeProviders.set(id, options.treeDataProvider);
+    return {
+      visible: true,
+      reveal(node: unknown): Promise<void> {
+        recorded.revealed.push(node);
+        return Promise.resolve();
+      },
+      dispose: () => undefined,
+    };
+  },
+  onDidChangeTextEditorSelection(listener: (event: unknown) => void): Disposable {
+    recorded.selectionListeners.push(listener);
     return noopDisposable;
   },
   showWarningMessage(message: string): Promise<undefined> {

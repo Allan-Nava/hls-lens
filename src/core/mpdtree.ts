@@ -195,7 +195,9 @@ export function buildMpdTimeline(text: string, options: TimelineOptions = {}): T
 
   return layoutRows(
     [...tracks.entries()].filter(([, spans]) => spans.length > 0).map(([label, spans]) => ({ label, spans })),
-    options,
+    // A dynamic presentation is still being written, so where it stops is a live edge
+    // and not an ending — the same distinction a missing EXT-X-ENDLIST makes.
+    { ...options, liveEdge: options.liveEdge ?? (attr(root, 'type') === 'dynamic' ? null : undefined) },
   );
 }
 

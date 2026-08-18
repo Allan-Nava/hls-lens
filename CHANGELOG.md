@@ -3,6 +3,20 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.23.0] - 2026-08-18
+
+Il resto di `The extension's interface`: la milestone si chiude.
+
+### Aggiunto
+
+- **La timeline segue lo stream**: mentre `Watch Live Playlist` gira, il pannello si **ridisegna a ogni poll** invece di essere un'istantanea da rilanciare a mano. Un'immagine di una finestra live è già vecchia nel momento in cui viene disegnata.
+  - **Il live edge**: dove uno stream che non è finito si ferma adesso — che è una cosa diversa da dove finisce un asset. `null` per un VOD, e ce l'ha anche un MPD `dynamic`, perché una presentazione dinamica la stanno ancora scrivendo.
+  - **Una finestra** (`HLS Lens: Zoom the Timeline to the Last…`): una live window con centinaia di segmenti è illeggibile intera. I segmenti a cavallo del bordo restano dentro — un segmento mezzo in vista è comunque quello che lo spettatore sta guardando.
+  - Le barre hanno `aria-label`: erano già `<button>`, ma senza etichetta un lettore di schermo legge una fila di pulsanti vuoti.
+- **La navigazione va nei due sensi**: `rowForLine` risponde a quale riga dell'albero possiede una riga del file, e **un tag e l'URI sotto di lui sono una riga sola**, perché sono una cosa sola. La vista è ora una `TreeView` con `getParent`, quindi può rivelare una riga dentro un ramo che nessuno ha ancora espanso — che è esattamente il caso per cui serve.
+  - Muovere il cursore nell'editor seleziona la riga corrispondente e **non ruba mai il fuoco**: una vista che ti porta via il cursore mentre scorri è peggio di una che non fa niente.
+  - Una riga che nessun elemento possiede non rivela niente, invece della cosa più vicina. C'è il test.
+
 ## [0.22.0] - 2026-08-18
 
 La prima metà di `The extension's interface`: essere trovabile, e non essere un muro.
@@ -444,6 +458,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.23.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.23.0
 [0.22.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.22.0
 [0.21.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.21.0
 [0.20.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.20.0

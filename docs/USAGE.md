@@ -234,7 +234,14 @@ one axis, which is the only way misalignment is visible rather than inferred.
 | a purple bar | the segment falls inside an ad break an `EXT-X-DATERANGE` declares |
 | a dashed rule | a boundary that not every rung shares |
 
-Clicking a segment reveals its line in the manifest.
+Clicking a segment reveals its line in the manifest, and moving the cursor in the editor selects the
+row of the tree that owns that line — a tag and the URI under it count as one row, because they are
+one thing. The tree never takes focus while you do it.
+
+While **Watch Live Playlist** is running, the panel redraws on every poll: a picture of a live window
+is out of date by the time it is drawn. The live edge — where a stream that has not ended currently
+stops — is marked in green, and **Zoom the Timeline to the Last…** narrows the drawing to the last
+minute (or whatever you ask for) of a window with hundreds of segments in it.
 
 Ad breaks are only drawn when the playlist carries an `EXT-X-PROGRAM-DATE-TIME`: a `DATERANGE` is
 anchored to the wall clock, and with nothing to tie the media timeline to it there is nothing to

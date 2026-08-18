@@ -48,17 +48,29 @@ export interface TimelineRow {
 /** What the page draws. */
 export interface TimelineModel {
   rows: TimelineRow[];
-  /** The longest track: the axis is scaled to it. */
+  /** The longest track: how much stream there is, whatever is being drawn. */
   duration: number;
+  /** The window actually drawn. Without a range it is the whole thing. */
+  from: number;
+  to: number;
   ticks: number[];
   /** Boundary times that not every row has — the drift, in seconds. */
   misaligned: number[];
+  /**
+   * Where the stream currently ends, when it has not ended: the point a live player
+   * is chasing. Null for a finished asset, which has an end rather than an edge.
+   */
+  liveEdge: number | null;
 }
 
 /** Options for one layout. */
 export interface TimelineOptions {
   /** Two boundaries this close are the same boundary. */
   toleranceS?: number;
+  /** Draw only this window. A live window of hundreds of segments is unreadable whole. */
+  range?: { from: number; to: number };
+  /** Where the stream ends while it is still going. */
+  liveEdge?: number | null;
 }
 
 /** How far apart two boundaries may be and still count as the same one. */
@@ -69,10 +81,11 @@ const TICK_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 720
 
 /** buildTimeline lays out one or more playlists on a shared axis. */
 export function buildTimeline(tracks: TimelineTrack[], options: TimelineOptions = {}): TimelineModel {
-  return layoutRows(
-    tracks.map((track) => ({ label: track.label, spans: layout(track.playlist) })),
-    options,
-  );
+  const rows = tracks.map((track) => ({ label: track.label, spans: layout(track.playlist) }));
+  // A playlist with no EXT-X-ENDLIST has not ended: where it stops is the live edge a
+  // player is chasing, which is a different thing from where an asset finishes.
+  const live = tracks.some((track) => !track.playlist.hasEndList && track.playlist.segments.length > 0);
+  return layoutRows(rows, { ...options, liveEdge: options.liveEdge ?? (live ? null : undefined) });
 }
 
 /**
@@ -133,7 +146,24 @@ export function layoutRows(tracks: Array<{ label: string; spans: TimelineSpan[] 
   }
   for (const index of offRows) rows[index].aligned = false;
 
-  return { rows, duration, ticks: niceTicks(duration), misaligned };
+  const from = options.range ? Math.max(0, options.range.from) : 0;
+  const to = options.range ? Math.min(options.range.to, Math.max(duration, options.range.to)) : duration;
+  if (options.range) {
+    // Keep the spans the window covers, and the ones straddling its edges: a segment
+    // half in view is still what a viewer is watching.
+    for (const row of rows) row.spans = row.spans.filter((span) => span.start < to && span.start + span.duration > from);
+  }
+
+  const liveEdge = options.liveEdge === undefined ? null : (options.liveEdge ?? duration);
+  return {
+    rows,
+    duration,
+    from,
+    to,
+    ticks: niceTicks(to - from).map((tick) => round(tick + from)),
+    misaligned,
+    liveEdge,
+  };
 }
 
 /**
@@ -227,7 +257,11 @@ export interface RenderOptions {
 
 /** renderTimelineHtml renders the whole page, deterministically. */
 export function renderTimelineHtml(model: TimelineModel, options: RenderOptions): string {
-  const pct = (seconds: number): string => (model.duration > 0 ? ((seconds / model.duration) * 100).toFixed(4) : '0.0000');
+  // Percentages are against the window being drawn, which is the whole stream unless
+  // a range was asked for.
+  const span = model.to - model.from;
+  const pct = (seconds: number): string => (span > 0 ? (((seconds - model.from) / span) * 100).toFixed(4) : '0.0000');
+  const width = (seconds: number): string => (span > 0 ? ((seconds / span) * 100).toFixed(4) : '0.0000');
 
   const rows = model.rows
     .map((row) => {
@@ -242,8 +276,8 @@ export function renderTimelineHtml(model: TimelineModel, options: RenderOptions)
             .join(', ');
           const tooltip = `#${span.index} ${span.uri} · ${span.duration}s at ${span.start}s${marks ? ` · ${marks}` : ''}`;
           return (
-            `<button class="${classes.join(' ')}" style="left:${pct(span.start)}%;width:${pct(span.duration)}%" ` +
-            `data-line="${span.line}" title="${escape(tooltip)}"><span>${escape(span.uri)}</span></button>`
+            `<button class="${classes.join(' ')}" style="left:${pct(span.start)}%;width:${width(span.duration)}%" ` +
+            `data-line="${span.line}" title="${escape(tooltip)}" aria-label="${escape(tooltip)}"><span>${escape(span.uri)}</span></button>`
           );
         })
         .join('');
@@ -262,9 +296,15 @@ export function renderTimelineHtml(model: TimelineModel, options: RenderOptions)
     .map((at) => `<span class="drift" style="left:${pct(at)}%" title="boundary at ${at}s is not in every rendition"></span>`)
     .join('');
 
+  const edge =
+    model.liveEdge === null
+      ? ''
+      : `<span class="edge" style="left:${pct(model.liveEdge)}%" title="live edge at ${model.liveEdge}s"></span>`;
+
   const summary = [
     `${model.rows.length} ${model.rows.length === 1 ? 'rendition' : 'renditions'}`,
-    `${model.duration}s`,
+    model.from > 0 || model.to < model.duration ? `${model.from}s–${model.to}s of ${model.duration}s` : `${model.duration}s`,
+    model.liveEdge === null ? '' : 'live',
     model.misaligned.length === 0 ? 'boundaries aligned' : `${model.misaligned.length} unshared boundar${model.misaligned.length === 1 ? 'y' : 'ies'}`,
   ].join(' · ');
 
@@ -282,7 +322,7 @@ export function renderTimelineHtml(model: TimelineModel, options: RenderOptions)
   <div class="axis">${ticks}</div>
   <div class="tracks">
 ${rows}
-    <div class="drifts">${drift}</div>
+    <div class="drifts">${drift}${edge}</div>
   </div>
 </div>
 <footer>
@@ -291,6 +331,7 @@ ${rows}
   <span class="key gap"></span> EXT-X-GAP
   <span class="key ad"></span> ad break
   <span class="key drift-key"></span> boundary not in every rendition
+  <span class="key edge-key"></span> live edge
   <span class="dim">click a segment to reveal its line</span>
 </footer>
 <script nonce="${escape(options.nonce)}">
@@ -326,12 +367,14 @@ button.seg.gap{background:repeating-linear-gradient(45deg,var(--vscode-charts-re
 button.seg.ad{background:var(--vscode-charts-purple)}
 .drifts{position:absolute;inset:0;margin-left:9.5rem;pointer-events:none}
 .drift{position:absolute;top:0;bottom:0;width:0;border-left:1px dashed var(--vscode-charts-yellow)}
+.edge{position:absolute;top:0;bottom:0;width:0;border-left:2px solid var(--vscode-charts-green)}
 footer{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;padding:0 1rem;color:var(--vscode-descriptionForeground)}
 .key{display:inline-block;width:.8rem;height:.8rem;border-radius:2px;background:var(--vscode-charts-blue)}
 .key.disc{background:var(--vscode-charts-orange)}
 .key.gap{background:repeating-linear-gradient(45deg,var(--vscode-charts-red) 0 3px,transparent 3px 6px)}
 .key.ad{background:var(--vscode-charts-purple)}
 .key.drift-key{width:0;border-left:1px dashed var(--vscode-charts-yellow);border-radius:0}
+.key.edge-key{width:0;border-left:2px solid var(--vscode-charts-green);border-radius:0}
 footer .dim{margin-left:auto}
 `.trim();
 

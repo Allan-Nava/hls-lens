@@ -11,7 +11,7 @@ import * as path from 'path';
 import { AddressInfo } from 'net';
 
 import * as stub from './vscode-stub';
-import { filterNodes, subtreeMatches } from '../src/core/tree';
+import { filterNodes, subtreeMatches, rowForLine } from '../src/core/tree';
 import {
   activate,
   activeManifest,
@@ -2224,6 +2224,70 @@ async function main(): Promise<void> {
     assert.deepStrictEqual(analyzeMpd(contiguous).filter((f) => f.rule === 'dash/period-not-contiguous'), []);
   });
 
+  // ------------------------------------------------- the live edge and the zoom
+  await test('a live playlist has a live edge, and a finished one has none', () => {
+    const live = '#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4.000,\na.ts\n#EXTINF:4.000,\nb.ts\n';
+    const vod = `${live}#EXT-X-ENDLIST\n`;
+    assert.strictEqual(buildTimeline([{ label: 'live', playlist: parsePlaylist(live) }]).liveEdge, 8);
+    assert.strictEqual(buildTimeline([{ label: 'vod', playlist: parsePlaylist(vod) }]).liveEdge, null);
+  });
+
+  await test('a dynamic MPD has a live edge too', () => {
+    const dynamic = [
+      '<MPD type="dynamic">',
+      '  <Period id="p0"><AdaptationSet contentType="video">',
+      '    <SegmentTemplate media="$Number$.m4s" timescale="1000"><SegmentTimeline><S t="0" d="4000" r="1"/></SegmentTimeline></SegmentTemplate>',
+      '  </AdaptationSet></Period>',
+      '</MPD>',
+    ].join('\n');
+    assert.strictEqual(buildMpdTimeline(dynamic).liveEdge, 8);
+    assert.strictEqual(buildMpdTimeline(dynamic.replace('type="dynamic"', 'type="static"')).liveEdge, null);
+  });
+
+  await test('a range keeps only what it covers, and the axis is drawn to it', () => {
+    const text =
+      '#EXTM3U\n#EXT-X-TARGETDURATION:4\n' +
+      '#EXTINF:4.000,\na.ts\n#EXTINF:4.000,\nb.ts\n#EXTINF:4.000,\nc.ts\n#EXTINF:4.000,\nd.ts\n';
+    const model = buildTimeline([{ label: 'live', playlist: parsePlaylist(text) }], { range: { from: 8, to: 16 } });
+    assert.strictEqual(model.from, 8);
+    assert.strictEqual(model.to, 16);
+    // Only the segments the window covers, and the ones that straddle its edge.
+    assert.deepStrictEqual(
+      model.rows[0].spans.map((s) => s.start),
+      [8, 12],
+    );
+    // The whole model still says how long the stream is; the window is what is drawn.
+    assert.strictEqual(model.duration, 16);
+
+    const html = renderTimelineHtml(model, { title: 'live.m3u8', nonce: 'n' });
+    // A bar at 8s is at the left edge of a window that starts at 8s.
+    assert.ok(html.includes('left:0.0000%'), 'the window is what the percentages are against');
+  });
+
+  await test('the bars say what they are without a mouse', () => {
+    const text = '#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-GAP\n#EXTINF:4.000,\na.ts\n';
+    const html = renderTimelineHtml(buildTimeline([{ label: 'live', playlist: parsePlaylist(text) }]), { title: 't', nonce: 'n' });
+    assert.ok(html.includes('aria-label="'), 'every bar is labelled for a screen reader');
+    assert.ok(/aria-label="[^"]*EXT-X-GAP/.test(html), html.slice(html.indexOf('aria-label'), html.indexOf('aria-label') + 120));
+  });
+
+  // ---------------------------------------------------- navigation, both ways
+  await test('rowForLine answers which row of the tree owns a line', () => {
+    const master = parsePlaylist(fixture('master-clean.m3u8'));
+    // The EXT-X-MEDIA lines are renditions; the EXT-X-STREAM-INF lines are variants.
+    const mediaLine = master.renditions[1].line;
+    assert.deepStrictEqual(rowForLine(master, mediaLine), { section: 'renditions', index: 1 });
+    assert.deepStrictEqual(rowForLine(master, master.variants[0].line), { section: 'variants', index: 0 });
+    // The URI line under a STREAM-INF belongs to the same row as the tag.
+    assert.deepStrictEqual(rowForLine(master, master.variants[0].uriLine), { section: 'variants', index: 0 });
+    assert.strictEqual(rowForLine(master, 0), undefined, 'the #EXTM3U line owns nothing');
+
+    const media = parsePlaylist('#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXT-X-MAP:URI="i.mp4"\n#EXTINF:4.000,\na.ts\n#EXT-X-ENDLIST\n');
+    assert.deepStrictEqual(rowForLine(media, 3), { section: 'segments', index: 0 }, 'the EXTINF');
+    assert.deepStrictEqual(rowForLine(media, 4), { section: 'segments', index: 0 }, 'and its URI');
+    assert.deepStrictEqual(rowForLine(media, 2), { section: 'maps', index: 0 });
+  });
+
   // ------------------------------------------------------------ tree filtering
   interface Node {
     label: string;
@@ -2300,6 +2364,33 @@ async function main(): Promise<void> {
     await stub.recorded.commands.get('hlsLens.clearFilter')!();
     assert.strictEqual(stub.recorded.contexts.get('hlsLens.filtered'), false);
     assert.ok(!String(provider.getChildren()[0].label).startsWith('Filtered:'));
+  });
+
+  await test('the tree follows the cursor, and never steals focus', async () => {
+    stub.resetRecorded();
+    activate(stub.fakeContext() as never);
+    const text = fixture('master-clean.m3u8');
+    const doc = stub.fakeDocument(text, '/w/master.m3u8');
+    stub.recorded.activeDocument = doc;
+
+    const playlist = parsePlaylist(text);
+    // The URI line under the second EXT-X-STREAM-INF: not the row's own line, which is
+    // the whole reason rowForLine exists.
+    const line = playlist.variants[1].uriLine;
+    assert.strictEqual(stub.recorded.selectionListeners.length, 1, 'the listener is registered');
+    stub.recorded.selectionListeners[0]({
+      textEditor: { document: doc, selection: { active: new stub.Position(line, 0) } },
+    });
+
+    assert.strictEqual(stub.recorded.revealed.length, 1);
+    const revealed = stub.recorded.revealed[0] as { line?: number; label: string };
+    assert.strictEqual(revealed.line, playlist.variants[1].line, 'the row of that variant');
+
+    // A line no row owns reveals nothing rather than the nearest thing.
+    stub.recorded.selectionListeners[0]({
+      textEditor: { document: doc, selection: { active: new stub.Position(0, 0) } },
+    });
+    assert.strictEqual(stub.recorded.revealed.length, 1);
   });
 
   // ------------------------------------------------------------- the walkthrough

@@ -17,7 +17,7 @@ import { quickFixesFor } from './core/fixes';
 import { analyzeAcross, LoadedRendition } from './core/crosscheck';
 import { describeChange, diffPlaylists, watchIntervalMs } from './core/watch';
 import { analyzeMpd } from './core/dash';
-import { filterNodes } from './core/tree';
+import { filterNodes, rowForLine, TreeAddress } from './core/tree';
 import { buildMpdTimeline, buildMpdTree, mpdLinks, mpdSummary, MpdRow } from './core/mpdtree';
 import { dashSpec, renderDashHover } from './core/dashspec';
 import { isManifestPath, renderWorkspaceReport, summariseWorkspace, WorkspaceEntry } from './core/workspace';
@@ -40,6 +40,7 @@ let workspaceDiagnostics: vscode.DiagnosticCollection;
 let output: vscode.OutputChannel;
 let statusBar: vscode.StatusBarItem;
 let tree: ManifestTreeProvider;
+let treeView: vscode.TreeView<TreeNode> | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   diagnostics = vscode.languages.createDiagnosticCollection('hls-lens');
@@ -59,7 +60,7 @@ export function activate(context: vscode.ExtensionContext): void {
     workspaceDiagnostics,
     output,
     statusBar,
-    vscode.window.registerTreeDataProvider('hlsLens.explorer', tree),
+    (treeView = vscode.window.createTreeView('hlsLens.explorer', { treeDataProvider: tree })),
     vscode.workspace.registerTextDocumentContentProvider(SCHEME, {
       provideTextDocumentContent: (uri) => fetched.get(uri.toString()) ?? '',
     }),
@@ -101,6 +102,10 @@ export function activate(context: vscode.ExtensionContext): void {
       debounce = setTimeout(() => refresh(event.document), 300);
     }),
     vscode.window.onDidChangeActiveTextEditor((editor) => refresh(editor?.document)),
+    // HL-46: the tree follows the cursor. Clicking a row has always revealed its line;
+    // without the reverse, a finding on line 4000 of a live playlist is findable in
+    // the Problems panel and nowhere in the view that is supposed to explain it.
+    vscode.window.onDidChangeTextEditorSelection((event) => revealRowForCursor(event.textEditor)),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (!event.affectsConfiguration('hlsLens')) return;
       for (const doc of vscode.workspace.textDocuments) updateDiagnostics(doc);
@@ -126,6 +131,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('hlsLens.filter', () => setFilter()),
     vscode.commands.registerCommand('hlsLens.filterSeverity', () => setSeverityFilter()),
     vscode.commands.registerCommand('hlsLens.clearFilter', () => clearFilter()),
+    vscode.commands.registerCommand('hlsLens.timelineRange', () => setTimelineRange()),
   );
 
   for (const doc of vscode.workspace.textDocuments) updateDiagnostics(doc);
@@ -335,15 +341,82 @@ class ManifestTreeProvider implements vscode.TreeDataProvider<TreeNode> {
     return element;
   }
 
+  /** reveal() needs to know how to walk up; the map is filled as the tree is read. */
+  private readonly parents = new WeakMap<TreeNode, TreeNode>();
+
+  getParent(element: TreeNode): TreeNode | undefined {
+    return this.parents.get(element);
+  }
+
   getChildren(element?: TreeNode): TreeNode[] {
-    if (element) return element.children;
+    if (element) {
+      for (const child of element.children) this.parents.set(child, element);
+      return element.children;
+    }
     const active = activeManifest();
     const nodes = active ? buildTree({ ...active, findings: bySeverity(active.findings) }) : (() => {
       const mpd = activeMpdDocument();
       return mpd ? buildMpdNodes(mpd) : [];
     })();
-    return decorate(applyFilter(nodes));
+    const roots = decorate(applyFilter(nodes));
+    // Fill the whole map now: reveal() may ask for the parent of a row nobody has
+    // expanded yet, and an unexpanded branch is exactly the case it exists for.
+    const remember = (parent: TreeNode): void => {
+      for (const child of parent.children) {
+        this.parents.set(child, parent);
+        remember(child);
+      }
+    };
+    for (const root of roots) remember(root);
+    return roots;
   }
+}
+
+/**
+ * revealRowForCursor selects the row that owns the line the cursor is on.
+ *
+ * It never takes focus: the cursor is in the editor because someone is reading the
+ * manifest, and a view that steals focus while you scroll is worse than one that does
+ * nothing.
+ */
+function revealRowForCursor(editor: vscode.TextEditor): void {
+  if (!treeView?.visible || !isPlaylistDocument(editor.document)) return;
+  const playlist = parsePlaylist(editor.document.getText());
+  const address = rowForLine(playlist, editor.selection.active.line);
+  if (!address) return;
+  const line = lineOfRow(playlist, address);
+  if (line === undefined) return;
+  const node = findByLine(tree.getChildren(), line);
+  if (node) void treeView.reveal(node, { select: true, focus: false });
+}
+
+/** The line a row is drawn against, which is not always the line the cursor is on. */
+function lineOfRow(pl: Playlist, address: TreeAddress): number | undefined {
+  switch (address.section) {
+    case 'variants':
+      return pl.variants[address.index]?.line;
+    case 'renditions':
+      return pl.renditions[address.index]?.line;
+    case 'segments':
+      return pl.segments[address.index]?.extinfLine;
+    case 'parts':
+      return pl.parts[address.index]?.line;
+    case 'maps':
+      return pl.maps[address.index]?.line;
+    case 'keys':
+      return pl.keys[address.index]?.line;
+    default:
+      return undefined;
+  }
+}
+
+function findByLine(nodes: TreeNode[], line: number): TreeNode | undefined {
+  for (const node of nodes) {
+    if (node.line === line && node.kind !== 'section') return node;
+    const found = findByLine(node.children, line);
+    if (found) return found;
+  }
+  return undefined;
 }
 
 /** The tree's own filters: a text query and a floor on the findings it shows. */
@@ -1188,6 +1261,9 @@ export function toDiagnosticAt(lines: string[], finding: Finding): vscode.Diagno
 
 /** HL-12: the segments as a strip, and the renditions stacked on one axis. */
 let timelinePanel: vscode.WebviewPanel | undefined;
+/** How to redraw the open panel, and the window it is drawn to. */
+let timelineSource: (() => TimelineModel) | undefined;
+let timelineRange: { from: number; to: number } | undefined;
 
 async function showTimeline(): Promise<void> {
   const active = activeManifest();
@@ -1195,7 +1271,9 @@ async function showTimeline(): Promise<void> {
   if (!active && mpd) {
     // A <SegmentTimeline> is a list of durations, so it goes through the same layout,
     // the same axis and the same out-of-step detection as a playlist.
-    showTimelinePanel(buildMpdTimeline(mpd.getText()), nameOf(locationOf(mpd)));
+    const text = mpd.getText();
+    timelineSource = () => buildMpdTimeline(text, { range: timelineRange });
+    showTimelinePanel(timelineSource(), nameOf(locationOf(mpd)));
     return;
   }
   if (!active) {
@@ -1245,7 +1323,50 @@ async function showTimeline(): Promise<void> {
     return;
   }
 
-  showTimelinePanel(buildTimeline(tracks), nameOf(active.location));
+  timelineSource = () => buildTimeline(tracks, { range: timelineRange });
+  showTimelinePanel(timelineSource(), nameOf(active.location));
+}
+
+/**
+ * HL-45: the panel follows the stream. A timeline of a live playlist that has to be
+ * re-run by hand is a snapshot, and a snapshot of a live window is out of date by the
+ * time it is drawn.
+ */
+function refreshTimeline(playlist: Playlist, label: string): void {
+  if (!timelinePanel) return;
+  timelineSource = () => buildTimeline([{ label, playlist }], { range: timelineRange });
+  showTimelinePanel(timelineSource(), label);
+}
+
+/** HL-45: the window drawn, for a live playlist with hundreds of segments in it. */
+async function setTimelineRange(): Promise<void> {
+  if (!timelineSource) {
+    void vscode.window.showWarningMessage('HLS Lens: open the timeline first.');
+    return;
+  }
+  const answer = await vscode.window.showInputBox({
+    title: 'HLS Lens: how much of the timeline to draw',
+    prompt: 'Seconds from the end to show, or empty for the whole stream',
+    placeHolder: '60',
+  });
+  if (answer === undefined) return;
+  const seconds = Number.parseFloat(answer);
+  if (answer.trim() === '' || !Number.isFinite(seconds) || seconds <= 0) {
+    timelineRange = undefined;
+  } else {
+    const whole = buildTimelineDuration();
+    timelineRange = { from: Math.max(0, whole - seconds), to: whole };
+  }
+  showTimelinePanel(timelineSource(), timelinePanel?.title?.replace('HLS Timeline — ', '') ?? 'timeline');
+}
+
+/** The length of what the panel is showing, before any window is applied. */
+function buildTimelineDuration(): number {
+  const saved = timelineRange;
+  timelineRange = undefined;
+  const whole = timelineSource ? timelineSource().duration : 0;
+  timelineRange = saved;
+  return whole;
 }
 
 /** The panel itself: one at a time, and nothing decided here. */
@@ -1260,6 +1381,8 @@ function showTimelinePanel(model: TimelineModel, title: string): void {
     });
     timelinePanel.onDidDispose(() => {
       timelinePanel = undefined;
+      timelineSource = undefined;
+      timelineRange = undefined;
     });
     timelinePanel.webview.onDidReceiveMessage((message: { type?: string; line?: number }) => {
       if (message?.type === 'reveal' && typeof message.line === 'number') void revealLine(message.line);
@@ -1387,5 +1510,9 @@ async function pollWatch(): Promise<void> {
   } else {
     current.stalls = 0;
   }
+  // The timeline follows the poll: a picture of a live window is out of date by the
+  // time it is drawn, so redrawing it here is what makes it a view rather than a
+  // snapshot.
+  refreshTimeline(current.previous, nameOf(current.url));
   updateStatusBar();
 }
