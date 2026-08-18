@@ -3,6 +3,23 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.20.0] - 2026-08-18
+
+`src/extension.ts` non è più esente dai test. L'esenzione era una scelta scritta nel CLAUDE.md, e aveva già pagato un bug.
+
+### Aggiunto
+
+- **`test/vscode-stub.ts`**: un finto `vscode` — classi, enum, e i namespace `window`/`workspace`/`commands`/`languages` che registrano quello che ricevono. `esbuild.mjs` lo aliasa **solo** nel bundle dei test; in quello dell'estensione `vscode` resta `external`, e lo stub non entra nel `.vsix` (verificato).
+  - L'alternativa era `@vscode/test-electron`, che scarica una copia di VS Code per farci girare i test dentro. È l'approccio standard ed è quello sbagliato qui: la suite per regola è **offline** e gira in un secondo. Quello che lo stub non può verificare è che l'API vera si comporti come è modellata qui — è il prezzo, ed è scritto nel file invece di essere implicito.
+- **`activate()` gira sotto Node**, quindi la glue si guida invece di essere data per buona. Sotto test ora ci sono:
+  - **Il doppio controllo fra i comandi dichiarati in `package.json` e quelli registrati da `activate`**, nei due sensi. Un comando dichiarato e non registrato è una voce nella palette che non fa niente; uno registrato e non dichiarato è irraggiungibile. Nessuno dei due fallisce a build time né si vede in un diff. Ho verificato che il test abbia i denti aggiungendo un comando fantasma: diventa rosso.
+  - **`source = 'hls-lens'`**, la stringa su cui il provider dei quick fix filtra: scriverla diversamente fa sparire ogni fix senza un errore da nessuna parte, ed è esattamente il bug che questo repo ha già avuto. Insieme al suo complemento: un finding di un'altra estensione sulla stessa riga non deve essere rivendicato.
+  - `hint → Information` (un Hint vero è visibile solo col cursore sulla riga), la forma dell'albero e i comandi `revealLine` di ogni riga, l'albero e la status bar di un MPD, il profilo gradato **sotto** le impostazioni dell'utente, e le diagnostics della scansione del workspace cancellate quando il file viene aperto.
+
+### Nota
+
+- Scrivendo i test è emerso che **il messaggio di un finding è API per i quick fix**: `versionFix` rilegge il numero da `EXT-X-VERSION … need N`. Un messaggio finto senza quel pezzo non riceve nessun fix. Era il mio test a essere sbagliato, non il codice — ed è il comportamento voluto, perché così l'edit non può contraddire la diagnostica che l'utente sta guardando.
+
 ## [0.19.1] - 2026-08-18
 
 Nessun codice: la milestone dell'interfaccia, aperta dove le milestone si aprono.
@@ -392,6 +409,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.20.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.20.0
 [0.19.1]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.19.1
 [0.19.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.19.0
 [0.18.2]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.18.2

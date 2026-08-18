@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**41 of 47 items done** · `████████░░` 87%
+**42 of 48 items done** · `████████░░` 88%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -33,6 +33,7 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [DASH, all the way](#dash-all-the-way) | ⏳ planned | 0/2 |
 | [v0.19.0 — DASH compared, and across periods](#v0190--dash-compared-and-across-periods) | ✅ shipped | 2/2 |
 | [The extension's interface](#the-extensions-interface) | ⏳ planned | 0/4 |
+| [v0.20.0 — The glue under test](#v0200--the-glue-under-test) | ✅ shipped | 1/1 |
 
 ## v0.1.0 — Reading manifests
 
@@ -231,3 +232,11 @@ Twelve commands, 84 rules and one webview, and no way to discover any of it: the
 - [ ] **HL-44 — A tree you can filter**: a severity filter and a text filter in the view's toolbar. A master with forty rungs and eighty findings is a wall, and the Problems panel filters while the tree does not. The logic — which rows survive a query, and keeping a parent whose child matched — goes in `src/core/tree.ts` with tests; the toolbar buttons and the state are glue.
 - [ ] **HL-45 — A timeline that follows the stream**: the panel re-renders on each poll of `Watch Live Playlist` instead of being a snapshot re-run by hand, with the live edge marked and a zoom to a time range for a window with hundreds of segments. `buildTimeline` gains a range option and the marking of the edge, both tested; the panel plumbing is glue. The bars are already buttons — they need the labels that make them usable without a mouse.
 - [ ] **HL-46 — Navigation that goes both ways**: clicking a tree row reveals its line, and nothing does the reverse. `rowForLine` in the core answers "which row owns this line" and lets the tree follow the cursor, which is how a finding on line 4000 of a live playlist becomes findable at all.
+
+## v0.20.0 — The glue under test
+
+`src/extension.ts` was exempt from the tests by convention. The exemption had already cost a bug, so it is gone.
+
+✅ shipped · 1 of 1 · `██████████`
+
+- [x] **HL-47 — Test the extension host glue**: `test/vscode-stub.ts` is a fake `vscode` — the classes, the enums, and the namespaces recording what they are asked to do — aliased into the test bundle by `esbuild.mjs` and nowhere else. `activate()` now runs under Node, so the glue is driven rather than trusted: a **two-way check between the commands `package.json` declares and the ones `activate` registers** (either direction is a bug that fails nothing at build time), the `source = 'hls-lens'` the quick fixes filter on, a finding from another extension that must not be claimed, `hint → Information`, the tree's sections and their reveal commands, the MPD tree and status bar, the profile graded *under* the user's settings, and the workspace scan's diagnostics being dropped when the file is opened. The alternative was `@vscode/test-electron`, which downloads a copy of VS Code: rejected because this suite is offline by rule and runs in a second. What the stub cannot check is that the real API behaves as modelled — that is the price, and it is written into the file rather than left implied.

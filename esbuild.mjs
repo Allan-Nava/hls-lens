@@ -46,6 +46,11 @@ if (test) {
     outfile: '.test/run.mjs',
     format: 'esm',
     banner: { js: nodeBanner },
+    // src/extension.ts imports 'vscode', which only exists inside an extension host.
+    // Aliasing it to a fake is what lets the glue be tested at all: the alternative is
+    // @vscode/test-electron, which downloads a copy of VS Code — a network dependency
+    // in a suite that is offline by rule.
+    alias: { vscode: './test/vscode-stub.ts' },
   });
 } else if (tool) {
   // The generators import from the same source the extension ships (the rule catalogue,

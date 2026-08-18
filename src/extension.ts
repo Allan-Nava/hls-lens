@@ -131,16 +131,16 @@ export function deactivate(): void {
 
 // ---------------------------------------------------------------- diagnostics
 
-function isPlaylistDocument(doc: vscode.TextDocument): boolean {
+export function isPlaylistDocument(doc: vscode.TextDocument): boolean {
   return doc.languageId === 'm3u8' || looksLikePlaylist(doc.getText().slice(0, 64));
 }
 
 /** An .mpd, or an XML document whose root is an MPD saved under another name. */
-function isMpdDocument(doc: vscode.TextDocument): boolean {
+export function isMpdDocument(doc: vscode.TextDocument): boolean {
   return doc.languageId === 'dash-mpd' || /<MPD[\s>]/.test(doc.getText().slice(0, 2048));
 }
 
-function severityToVsCode(severity: Severity): vscode.DiagnosticSeverity {
+export function severityToVsCode(severity: Severity): vscode.DiagnosticSeverity {
   switch (severity) {
     case 'error':
       return vscode.DiagnosticSeverity.Error;
@@ -157,7 +157,7 @@ function severityToVsCode(severity: Severity): vscode.DiagnosticSeverity {
  * Findings as the user's settings want them graded. Applied before the minSeverity
  * floor, so a hint promoted to an error is visible even with the floor raised.
  */
-function graded(findings: Finding[]): Finding[] {
+export function graded(findings: Finding[]): Finding[] {
   const config = vscode.workspace.getConfiguration('hlsLens');
   // The profile is a starting point and the user's own settings are the last word,
   // so they go on top of it rather than under it.
@@ -168,7 +168,7 @@ function graded(findings: Finding[]): Finding[] {
   return applySeverityOverrides(findings, overrides);
 }
 
-function updateDiagnostics(doc: vscode.TextDocument): void {
+export function updateDiagnostics(doc: vscode.TextDocument): void {
   const config = vscode.workspace.getConfiguration('hlsLens');
   if (isMpdDocument(doc) && !isPlaylistDocument(doc)) {
     if (!config.get<boolean>('diagnostics.enabled', true)) {
@@ -209,7 +209,7 @@ function updateDiagnostics(doc: vscode.TextDocument): void {
   );
 }
 
-function toDiagnostic(doc: vscode.TextDocument, finding: Finding): vscode.Diagnostic {
+export function toDiagnostic(doc: vscode.TextDocument, finding: Finding): vscode.Diagnostic {
   const line = Math.min(finding.line, Math.max(doc.lineCount - 1, 0));
   const text = doc.lineAt(line);
   // Underline the text, not the indentation: a squiggle over an empty range is
@@ -241,7 +241,7 @@ function locationOf(doc: vscode.TextDocument): string {
   return doc.uri.scheme === 'file' ? doc.uri.fsPath : doc.uri.toString();
 }
 
-function activeManifest(): ActiveManifest | undefined {
+export function activeManifest(): ActiveManifest | undefined {
   const editor = vscode.window.activeTextEditor;
   const doc = editor?.document;
   if (!doc || !isPlaylistDocument(doc)) return undefined;
@@ -261,7 +261,7 @@ function activeManifest(): ActiveManifest | undefined {
   };
 }
 
-function updateStatusBar(): void {
+export function updateStatusBar(): void {
   const active = activeManifest();
   if (!active || active.playlist.kind === 'unknown') {
     const mpd = activeMpdDocument();
@@ -328,7 +328,7 @@ class ManifestTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   }
 }
 
-function buildTree(active: ActiveManifest): TreeNode[] {
+export function buildTree(active: ActiveManifest): TreeNode[] {
   const { playlist, findings } = active;
   const nodes: TreeNode[] = [];
   const summary = new TreeNode(ladderSummary(playlist), 'info', vscode.TreeItemCollapsibleState.None);
@@ -448,7 +448,7 @@ function problemsSection(findings: Finding[]): TreeNode {
  * the ladder is in the file, nested four elements deep and spread across attributes,
  * which is exactly the reading this extension exists to do for you.
  */
-function buildMpdNodes(doc: vscode.TextDocument): TreeNode[] {
+export function buildMpdNodes(doc: vscode.TextDocument): TreeNode[] {
   const text = doc.getText();
   const nodes: TreeNode[] = [];
   const summary = new TreeNode(mpdSummary(text), 'info', vscode.TreeItemCollapsibleState.None);
@@ -695,7 +695,7 @@ function runSegcheck(bin: string, args: string[], token: vscode.CancellationToke
  * playlist next to a manifest on disk opens in the editor, a remote one opens
  * where it lives.
  */
-class PlaylistLinkProvider implements vscode.DocumentLinkProvider {
+export class PlaylistLinkProvider implements vscode.DocumentLinkProvider {
   provideDocumentLinks(doc: vscode.TextDocument): vscode.DocumentLink[] {
     if (!isPlaylistDocument(doc)) return [];
     const playlist = parsePlaylist(doc.getText());
@@ -731,7 +731,7 @@ class PlaylistLinkProvider implements vscode.DocumentLinkProvider {
 }
 
 /** Hover: the spec entry for the tag under the cursor. */
-class TagHoverProvider implements vscode.HoverProvider {
+export class TagHoverProvider implements vscode.HoverProvider {
   provideHover(doc: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
     const line = doc.lineAt(position.line).text;
     if (!line.startsWith('#')) return undefined;
@@ -746,7 +746,7 @@ class TagHoverProvider implements vscode.HoverProvider {
 }
 
 /** Completion: tag names, attribute names, and the enumerated values of an attribute. */
-class TagCompletionProvider implements vscode.CompletionItemProvider {
+export class TagCompletionProvider implements vscode.CompletionItemProvider {
   provideCompletionItems(doc: vscode.TextDocument, position: vscode.Position): vscode.CompletionItem[] {
     const playlist = parsePlaylist(doc.getText());
     const kind = playlist.kind === 'master' || playlist.kind === 'media' ? playlist.kind : 'unknown';
@@ -769,7 +769,7 @@ class TagCompletionProvider implements vscode.CompletionItemProvider {
 }
 
 /** Code actions: the quick fixes for the findings an edit can settle. */
-class PlaylistFixProvider implements vscode.CodeActionProvider {
+export class PlaylistFixProvider implements vscode.CodeActionProvider {
   provideCodeActions(doc: vscode.TextDocument, _range: vscode.Range, context: vscode.CodeActionContext): vscode.CodeAction[] {
     const playlist = parsePlaylist(doc.getText());
     const actions: vscode.CodeAction[] = [];
@@ -1056,7 +1056,7 @@ async function checkWorkspace(): Promise<void> {
 }
 
 /** A diagnostic for a file that is not open, so there is no TextDocument to measure. */
-function toDiagnosticAt(lines: string[], finding: Finding): vscode.Diagnostic {
+export function toDiagnosticAt(lines: string[], finding: Finding): vscode.Diagnostic {
   const index = Math.min(finding.line, Math.max(lines.length - 1, 0));
   const text = lines[index] ?? '';
   const range = text.trim().length > 0 ? new vscode.Range(index, 0, index, text.length) : new vscode.Range(index, 0, index, 1);
@@ -1141,7 +1141,7 @@ async function showTimeline(): Promise<void> {
 }
 
 /** nameOf is the last path segment of a path or URL, for a label. */
-function nameOf(location: string): string {
+export function nameOf(location: string): string {
   const withoutQuery = location.split('?')[0];
   return withoutQuery.slice(withoutQuery.lastIndexOf('/') + 1) || withoutQuery;
 }

@@ -10,6 +10,20 @@ import * as http from 'http';
 import * as path from 'path';
 import { AddressInfo } from 'net';
 
+import * as stub from './vscode-stub';
+import {
+  activate,
+  activeManifest,
+  buildMpdNodes,
+  buildTree,
+  graded,
+  PlaylistFixProvider,
+  severityToVsCode,
+  toDiagnostic,
+  toDiagnosticAt,
+  updateDiagnostics,
+  updateStatusBar,
+} from '../src/extension';
 import { parseAttributeList, attrInt, attrFloat, attrResolution, attrList, attrBool } from '../src/core/attrs';
 import { parsePlaylist, looksLikePlaylist, KNOWN_TAG_NAMES, Playlist } from '../src/core/playlist';
 import { tagSpec, renderTagHover, SPEC_TAGS, completeAt } from '../src/core/spec';
@@ -2071,6 +2085,153 @@ async function main(): Promise<void> {
       ].join('\n'),
     );
     assert.deepStrictEqual(analyzeMpd(contiguous).filter((f) => f.rule === 'dash/period-not-contiguous'), []);
+  });
+
+  // -------------------------------------------------------------- the glue itself
+  await test('activate registers exactly the commands package.json declares', () => {
+    stub.resetRecorded();
+    activate(stub.fakeContext() as never);
+
+    const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    const declared = new Set<string>(manifest.contributes.commands.map((c: { command: string }) => c.command));
+    const registered = new Set(stub.recorded.commands.keys());
+
+    // Both directions. A command in package.json that nothing registers is a palette
+    // entry that does nothing when clicked; a registered command nothing declares is
+    // unreachable. Neither fails at build time, and neither is visible in a diff.
+    assert.deepStrictEqual(
+      [...declared].filter((id) => !registered.has(id)),
+      [],
+      'declared but never registered',
+    );
+    assert.deepStrictEqual(
+      [...registered].filter((id) => !declared.has(id)),
+      [],
+      'registered but never declared',
+    );
+  });
+
+  await test('activate wires the providers and the collections it needs', () => {
+    stub.resetRecorded();
+    activate(stub.fakeContext() as never);
+    for (const name of ['hls-lens', 'hls-lens-segcheck', 'hls-lens-cross', 'hls-lens-workspace']) {
+      assert.ok(stub.recorded.collections.has(name), `${name} collection`);
+    }
+    assert.ok(stub.recorded.treeProviders.has('hlsLens.explorer'));
+    assert.strictEqual(stub.recorded.linkProviders.length, 1);
+    assert.strictEqual(stub.recorded.hoverProviders.length, 1);
+    assert.strictEqual(stub.recorded.completionProviders.length, 1);
+    assert.strictEqual(stub.recorded.codeActionProviders.length, 1);
+  });
+
+  await test('a hint becomes Information, not Hint', () => {
+    // A real Hint is only visible with the cursor on the line, so the advisory rules
+    // would vanish from the Problems panel — which is where they are read.
+    assert.strictEqual(severityToVsCode('hint'), stub.DiagnosticSeverity.Information);
+    assert.strictEqual(severityToVsCode('error'), stub.DiagnosticSeverity.Error);
+    assert.strictEqual(severityToVsCode('warning'), stub.DiagnosticSeverity.Warning);
+  });
+
+  await test('a diagnostic carries the rule id and the source the fixes filter on', () => {
+    const doc = stub.fakeDocument('#EXTM3U\n#EXT-X-TARGETDURATION:6\n');
+    const finding: Finding = { rule: 'media/extinf-exceeds-target', severity: 'error', line: 1, message: 'too long', hint: 'shorten it' };
+    const diagnostic = toDiagnostic(doc as never, finding);
+    assert.strictEqual(diagnostic.code, 'media/extinf-exceeds-target');
+    // Load-bearing: PlaylistFixProvider filters on this exact string, and writing it
+    // differently makes every quick fix disappear with no error anywhere.
+    assert.strictEqual(diagnostic.source, 'hls-lens');
+    assert.ok(diagnostic.message.includes('shorten it'));
+    assert.strictEqual(diagnostic.range.start.line, 1);
+
+    // The same, for a file nobody has open: the ranges come from the text that was read.
+    const offline = toDiagnosticAt(['#EXTM3U', '#EXT-X-TARGETDURATION:6'], finding);
+    assert.strictEqual(offline.source, 'hls-lens');
+    assert.strictEqual(offline.range.end.character, '#EXT-X-TARGETDURATION:6'.length);
+  });
+
+  await test('the quick fix provider only answers for this extension diagnostics', () => {
+    stub.resetRecorded();
+    const text = '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXT-X-MAP:URI="i.mp4"\n#EXTINF:6.000,\na.m4s\n#EXT-X-ENDLIST\n';
+    const doc = stub.fakeDocument(text);
+    const provider = new PlaylistFixProvider();
+
+    // The message is not decoration: the version fix reads the number back out of it,
+    // so that the edit cannot contradict the diagnostic the user is looking at.
+    const ours = new stub.Diagnostic(
+      new stub.Range(1, 0, 1, 10),
+      'EXT-X-VERSION is 3 but the playlist uses features that need 6: EXT-X-MAP needs 6',
+      stub.DiagnosticSeverity.Error,
+    );
+    ours.source = 'hls-lens';
+    ours.code = 'syntax/version-too-low';
+    const offered = provider.provideCodeActions(doc as never, new stub.Range(1, 0, 1, 1) as never, { diagnostics: [ours] } as never);
+    assert.strictEqual(offered.length, 1, 'a fix is offered for our own finding');
+    assert.ok(offered[0].title.includes('6'), offered[0].title);
+
+    // Someone else's diagnostic on the same line is not ours to fix.
+    const theirs = new stub.Diagnostic(
+      new stub.Range(1, 0, 1, 10),
+      'EXT-X-VERSION is 3 but the playlist uses features that need 6: EXT-X-MAP needs 6',
+      stub.DiagnosticSeverity.Error,
+    );
+    theirs.source = 'eslint';
+    theirs.code = 'syntax/version-too-low';
+    const ignored = provider.provideCodeActions(doc as never, new stub.Range(1, 0, 1, 1) as never, { diagnostics: [theirs] } as never);
+    assert.deepStrictEqual(ignored, []);
+  });
+
+  await test('the profile is graded under the user settings, not over them', () => {
+    stub.resetRecorded();
+    const findings: Finding[] = [{ rule: 'master/no-iframe-stream', severity: 'hint', line: 0, message: 'no trick play' }];
+
+    stub.recorded.configuration['hlsLens.diagnostics.profile'] = 'apple';
+    assert.strictEqual(severityOf(graded(findings), 'master/no-iframe-stream'), 'error', 'the profile promotes it');
+
+    stub.recorded.configuration['hlsLens.diagnostics.severity'] = { 'master/no-iframe-stream': 'hint' };
+    assert.strictEqual(severityOf(graded(findings), 'master/no-iframe-stream'), 'hint', 'the user has the last word');
+  });
+
+  await test('the tree has the sections the manifest earns, and each row reveals a line', () => {
+    stub.resetRecorded();
+    stub.recorded.activeDocument = stub.fakeDocument(fixture('master-clean.m3u8'), '/w/master.m3u8');
+    const nodes = buildTree(activeManifest()!);
+    const labels = nodes.map((n) => String(n.label));
+    assert.ok(labels.some((l) => l.startsWith('Variants (')), JSON.stringify(labels));
+    assert.ok(labels.some((l) => l.startsWith('Renditions (')), JSON.stringify(labels));
+
+    const variants = nodes.find((n) => String(n.label).startsWith('Variants ('))!;
+    assert.strictEqual(variants.children.length, 5, 'four rungs and the I-frame stream');
+    for (const row of variants.children) {
+      assert.strictEqual(row.command?.command, 'hlsLens.revealLine');
+      assert.strictEqual(typeof row.command?.arguments?.[0], 'number');
+    }
+  });
+
+  await test('an MPD gets a tree of its own, and a status bar line', () => {
+    stub.resetRecorded();
+    stub.recorded.activeDocument = stub.fakeDocument(fixture('dash-broken.mpd'), '/w/stream.mpd', 'dash-mpd');
+    const nodes = buildMpdNodes(stub.recorded.activeDocument as never);
+    assert.ok(String(nodes[0].label).includes('period'), String(nodes[0].label));
+    assert.ok(nodes.some((n) => String(n.label).startsWith('Period')), JSON.stringify(nodes.map((n) => n.label)));
+    assert.ok(nodes.some((n) => String(n.label).startsWith('Problems (')));
+
+    updateStatusBar();
+    assert.ok(stub.recorded.statusBar.visible);
+    assert.ok(stub.recorded.statusBar.text.includes('dynamic'), stub.recorded.statusBar.text);
+  });
+
+  await test('opening a manifest clears what the workspace scan left on it', () => {
+    stub.resetRecorded();
+    activate(stub.fakeContext() as never);
+    const doc = stub.fakeDocument('#EXTM3U\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000,\na.ts\n', '/w/live.m3u8');
+    const workspaceCollection = stub.recorded.collections.get('hls-lens-workspace')!;
+    const uri = doc.uri as stub.Uri;
+    workspaceCollection.set(uri, [new stub.Diagnostic(new stub.Range(0, 0, 0, 1), 'stale', stub.DiagnosticSeverity.Error)]);
+
+    updateDiagnostics(doc as never);
+    // Two collections on one file would list every finding twice in the panel.
+    assert.strictEqual(workspaceCollection.entries.size, 0);
+    assert.ok((stub.recorded.collections.get('hls-lens')!.entries.get(uri.toString()) ?? []).length > 0);
   });
 
   // ------------------------------------------------------------------- compare

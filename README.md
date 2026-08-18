@@ -109,7 +109,7 @@ For the deep check, install segcheck (`brew install --cask allan-nava/tap/segche
 
 ## Design notes
 
-- **The logic is a pure core.** `src/core/` never imports `vscode`: the parser, the 84 rules, the ladder model, URI resolution, the segcheck bridge — and even the backlog parser and the icon generator — are plain TypeScript with tests. `src/extension.ts` only translates that model into diagnostics, tree items and links, and the scripts in `scripts/` are I/O over the same core.
+- **The logic is a pure core, and the glue is tested too.** `src/core/` never imports `vscode`: the parser, the 84 rules, the ladder model, URI resolution, the segcheck bridge — and even the backlog parser and the icon generator — are plain TypeScript with tests. `src/extension.ts` only translates that model into diagnostics, tree items and links, and it is no longer taken on trust: a fake `vscode` module (`test/vscode-stub.ts`, aliased into the test bundle only) lets the extension be activated and driven from Node, so the commands, the providers and the diagnostic mapping have tests of their own. The scripts in `scripts/` are I/O over the same core.
 - **Line numbers everywhere, 0-based.** The parser keeps the line index of every tag, URI, `EXTINF` and `PROGRAM-DATE-TIME` it decodes, because a finding that cannot point at a line is just a linter you have to read twice.
 - **Attribute lists are parsed, not split.** `CODECS="avc1.4d401f,mp4a.40.2"` is one value with a comma in it; splitting the line on commas is how a manifest gets reported as codec-less.
 - **No dependencies.** Not one runtime dependency; the fetcher is `node:http(s)` and even the Marketplace icon is generated (`npm run icon`) rather than pulled from a toolchain.
