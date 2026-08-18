@@ -172,3 +172,16 @@ quietly does nothing, or the wrong thing, for an `.mpd`.
 
 - [x] **HL-39 — Compare two MPDs**: `compareMpds` matches periods by `@id`, adaptation sets by what they carry and representations by `@id` — the DASH equivalent of matching HLS rungs by URI, stable for the same reason — and reports `@type` and `@mediaPresentationDuration` too. `Compare With…` now runs on an open `.mpd`. The defect this item was opened for is fixed at the source: **two documents that are neither playlists now say they cannot be compared**, instead of returning an empty list that reads as "identical".
 - [x] **HL-42 — Cross-period `dash/*` rules**: `dash/period-codecs-change` (a decoder reconfigured mid-presentation, which on many devices is a visible stall), `dash/period-missing-track` (a track that stops existing at a boundary is silence, or a subtitle that disappears, from that point on) and `dash/period-not-contiguous` (periods chain; a hole between them is media no player can request). 81 → 84.
+
+## The extension's interface
+
+Twelve commands, 84 rules and one webview, and no way to discover any of it: the tree
+shows everything at once or nothing, the timeline is a snapshot you re-run by hand, and
+the only navigation goes one way — from a row to a line, never back. This is the half
+of the extension that is glue by design, so each item names the piece of it that is
+logic and therefore gets a test.
+
+- [ ] **HL-43 — A first run that explains itself**: `contributes.walkthroughs`, the first-run page VS Code gives an extension for free — open a manifest, read the tree, run the deep check, scan the workspace, pick a profile. Nothing here is logic; the value is that twelve commands stop being invisible to anyone who did not read the README.
+- [ ] **HL-44 — A tree you can filter**: a severity filter and a text filter in the view's toolbar. A master with forty rungs and eighty findings is a wall, and the Problems panel filters while the tree does not. The logic — which rows survive a query, and keeping a parent whose child matched — goes in `src/core/tree.ts` with tests; the toolbar buttons and the state are glue.
+- [ ] **HL-45 — A timeline that follows the stream**: the panel re-renders on each poll of `Watch Live Playlist` instead of being a snapshot re-run by hand, with the live edge marked and a zoom to a time range for a window with hundreds of segments. `buildTimeline` gains a range option and the marking of the edge, both tested; the panel plumbing is glue. The bars are already buttons — they need the labels that make them usable without a mouse.
+- [ ] **HL-46 — Navigation that goes both ways**: clicking a tree row reveals its line, and nothing does the reverse. `rowForLine` in the core answers "which row owns this line" and lets the tree follow the cursor, which is how a finding on line 4000 of a live playlist becomes findable at all.

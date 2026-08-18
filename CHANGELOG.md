@@ -3,6 +3,15 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.19.1] - 2026-08-18
+
+Nessun codice: la milestone dell'interfaccia, aperta dove le milestone si aprono.
+
+### Modificato
+
+- **Nuova sezione `## The extension's interface` nel `BACKLOG.md`** — milestone nuova su GitHub e quattro issue (`HL-43`…`HL-46`). Dodici comandi, 84 regole e una webview, e nessun modo di scoprirne uno: l'albero mostra tutto insieme o niente, la timeline è un'istantanea che si rilancia a mano, e la navigazione va in una direzione sola — da una riga dell'albero a una riga del file, mai al contrario.
+- Ogni voce **nomina il pezzo che è logica** e che quindi avrà un test (`src/core/tree.ts` per i filtri, il range e il live edge in `buildTimeline`, `rowForLine` per la navigazione inversa). È la parte dell'estensione che per scelta è glue non testata, quindi vale la pena scrivere in anticipo dove finisce la glue e dove comincia il core — altrimenti una milestone sulla GUI diventa il posto dove la regola del TDD si scioglie.
+
 ## [0.19.0] - 2026-08-18
 
 DASH smette di essere di seconda classe nel confronto, e i periodi cominciano a essere letti l'uno contro l'altro. 81 → **84 regole**.
@@ -383,6 +392,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.19.1]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.19.1
 [0.19.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.19.0
 [0.18.2]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.18.2
 [0.18.1]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.18.1
