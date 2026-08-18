@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**48 of 48 items done** · `██████████` 100%
+**48 of 52 items done** · `█████████░` 92%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -35,6 +35,7 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [v0.21.0 — DASH drawn and documented](#v0210--dash-drawn-and-documented) | ✅ shipped | 2/2 |
 | [v0.22.0 — Found and filtered](#v0220--found-and-filtered) | ✅ shipped | 2/2 |
 | [v0.23.0 — The timeline moves, and the tree follows](#v0230--the-timeline-moves-and-the-tree-follows) | ✅ shipped | 2/2 |
+| [Does the manifest point at anything?](#does-the-manifest-point-at-anything) | ⏳ planned | 0/4 |
 
 ## v0.1.0 — Reading manifests
 
@@ -248,3 +249,14 @@ The rest of `The extension's interface`: the milestone is closed.
 
 - [x] **HL-45 — A timeline that follows the stream**: the panel redraws on every poll of `Watch Live Playlist` instead of being a snapshot re-run by hand — a picture of a live window is out of date by the time it is drawn. `buildTimeline` gained a **live edge** (where a stream that has not ended currently stops, which is a different thing from where an asset finishes: `null` for VOD, and a dynamic MPD gets one too) and a **range**, so a window of hundreds of segments can be drawn as its last minute; segments straddling the edge of the window are kept, because a segment half in view is still what a viewer is watching. The bars carry `aria-label`, so the picture is usable without a mouse.
 - [x] **HL-46 — Navigation that goes both ways**: `rowForLine` answers which row owns a line — and a tag and the URI under it are **one** row, because they are one thing. The view is now a `TreeView` with `getParent`, so it can reveal a row nobody has expanded yet; the cursor moving in the editor selects the matching row and **never takes focus**, because a view that steals focus while you scroll is worse than one that does nothing. A line no row owns reveals nothing rather than the nearest thing.
+
+## Does the manifest point at anything?
+
+Eighty-four rules read what a manifest *declares*, and a manifest can be perfect and point at nothing. The most common failure in production is not a malformed tag: it is a rung that 404s, an init segment behind a login page that answers `200 text/html`, or a live playlist a CDN is caching for an hour. None of that needs the segment bytes — which is segcheck's job — only the response headers, so it belongs here. The network makes this the first feature that cannot be tested on a fixture alone. It is tested the way the fetcher already is: a throwaway `http` server on a random local port. A test that touches a CDN is still a bug.
+
+⏳ planned · 0 of 4 · `░░░░░░░░░░`
+
+- [ ] **HL-48 — `HLS Lens: Check Reachability`**: `HEAD` every URI a master declares — the rungs, the alternate renditions, the I-frame playlist — and for a media playlist the init segment and the first and last segment. The part that is logic and gets a test: **the plan** (what to request, in what order, and the cap that keeps a 3000-segment live window from becoming 3000 requests) and **the verdict** (what a status code means for the thing that was asked for). A `405` to a `HEAD` is not a broken URL, it is a server that dislikes `HEAD`, and the plan falls back to a one-byte ranged `GET`.
+- [ ] **HL-49 — What came back is what was promised**: a playlist served as `text/html` is a login page or an error page with a `200` on it — the single most misleading failure a CDN produces, because every rule in this extension will happily analyse the HTML it got. A segment served as `text/plain`, an fMP4 init served as `video/mp2t`, a `.vtt` served as `application/octet-stream`: each one is a player that fetches successfully and then cannot play. `contentTypeVerdict` in the core, with the mapping from what the manifest claims to what the response should say.
+- [ ] **HL-50 — Cache headers a live stream cannot survive**: a live media playlist with a `max-age` longer than its own target duration is a stream that freezes for everyone behind that cache, and the manifest is valid, and the origin looks fine. Also the opposite: `no-store` on a segment, which turns every viewer into an origin request. Parsing `Cache-Control` and judging it **against the playlist's own declarations** is the logic; the request is glue.
+- [ ] **HL-51 — Where the answer goes**: the findings land in their own diagnostic collection on the line that declares the URI — the `EXT-X-STREAM-INF` for a rung, the `EXT-X-MAP` for an init segment — because "404" is only useful next to the thing that asked for it. They also join the report export, so the file you send the CDN team has both what the manifest says and what its own URLs answered.

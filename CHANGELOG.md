@@ -3,6 +3,16 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.23.1] - 2026-08-18
+
+Nessun codice: la milestone successiva, aperta dove le milestone si aprono.
+
+### Modificato
+
+- **Nuova sezione `## Does the manifest point at anything?` nel `BACKLOG.md`** — milestone nuova su GitHub e quattro issue (`HL-48`…`HL-51`). Ottantaquattro regole leggono quello che un manifest **dichiara**, e un manifest può essere perfetto e non puntare a niente. Il guasto più comune in produzione non è un tag malformato: è un rung che fa 404, un init segment dietro una pagina di login che risponde `200 text/html`, o una playlist live che una CDN sta cachando per un'ora.
+- **Niente di tutto ciò richiede i byte dei segmenti** — quello resta lavoro di segcheck — ma solo gli header della risposta. È il confine che tiene in piedi la divisione fra i due strumenti, ed è scritto nella sezione.
+- È la prima feature che **non si può testare su una fixture**: si testerà come già si testa il fetcher, con un server `http` usa e getta su porta random. Un test che tocca una CDN resta un bug.
+
 ## [0.23.0] - 2026-08-18
 
 Il resto di `The extension's interface`: la milestone si chiude.
@@ -458,6 +468,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.23.1]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.23.1
 [0.23.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.23.0
 [0.22.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.22.0
 [0.21.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.21.0
