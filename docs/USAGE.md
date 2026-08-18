@@ -279,6 +279,15 @@ The defects are the same ones a playlist has: The same stream is usually package
 | `dash/period-missing-track` | a period without a track the others have — silence, or a subtitle gone, from that boundary on |
 | `dash/period-not-contiguous` | a period that does not start where the previous one ended |
 
+`HLS Lens: Show Timeline` draws an MPD too: one row per adaptation set, read from its
+`<SegmentTimeline>` with `@r` expanded and `@timescale` applied, and the period boundaries drawn as
+discontinuities — which is what they are, since crossing one is where a decoder gets reconfigured. An
+MPD that lists no segments draws nothing rather than inventing a segment count.
+
+Hovering an element name explains it, and the URLs an MPD holds — `<BaseURL>`, `@initialization`,
+`@sourceURL`, `UTCTiming@value` — are document links. Segment **templates** are not: nothing resolves
+`$Number$`, so a link to `chunk-$Number$.m4s` would offer a request that cannot be made.
+
 The XML reader is part of the extension rather than a dependency, and it is deliberately narrow: elements, attributes and nesting. A manifest that needs entity expansion, DTDs or namespace resolution is reported rather than guessed at.
 
 ## Watching a live playlist

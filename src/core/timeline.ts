@@ -69,10 +69,23 @@ const TICK_STEPS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 720
 
 /** buildTimeline lays out one or more playlists on a shared axis. */
 export function buildTimeline(tracks: TimelineTrack[], options: TimelineOptions = {}): TimelineModel {
+  return layoutRows(
+    tracks.map((track) => ({ label: track.label, spans: layout(track.playlist) })),
+    options,
+  );
+}
+
+/**
+ * layoutRows is the half of the timeline that has nothing to do with HLS: given rows
+ * of spans it computes the axis, the ticks and which rows are out of step. DASH feeds
+ * it too (see mpdtree.ts) — a <SegmentTimeline> is a list of durations, which is all
+ * this needs.
+ */
+export function layoutRows(tracks: Array<{ label: string; spans: TimelineSpan[] }>, options: TimelineOptions = {}): TimelineModel {
   const tolerance = options.toleranceS ?? DEFAULT_TOLERANCE_S;
 
   const rows: TimelineRow[] = tracks.map((track) => {
-    const spans = layout(track.playlist);
+    const spans = track.spans;
     return {
       label: track.label,
       spans,

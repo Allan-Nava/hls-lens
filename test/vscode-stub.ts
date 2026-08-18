@@ -229,10 +229,10 @@ export const recorded = {
   commands: new Map<string, (...args: unknown[]) => unknown>(),
   collections: new Map<string, FakeDiagnosticCollection>(),
   treeProviders: new Map<string, unknown>(),
-  linkProviders: [] as unknown[],
-  hoverProviders: [] as unknown[],
-  completionProviders: [] as unknown[],
-  codeActionProviders: [] as unknown[],
+  linkProviders: [] as Array<{ language: string; provider: unknown }>,
+  hoverProviders: [] as Array<{ language: string; provider: unknown }>,
+  completionProviders: [] as Array<{ language: string; provider: unknown }>,
+  codeActionProviders: [] as Array<{ language: string; provider: unknown }>,
   messages: [] as string[],
   output: [] as string[],
   statusBar: { text: '', tooltip: '', command: '', visible: false },
@@ -265,20 +265,20 @@ export const languages = {
     recorded.collections.set(name, collection);
     return collection;
   },
-  registerDocumentLinkProvider(_selector: unknown, provider: unknown): Disposable {
-    recorded.linkProviders.push(provider);
+  registerDocumentLinkProvider(selector: { language: string }, provider: unknown): Disposable {
+    recorded.linkProviders.push({ language: selector.language, provider });
     return noopDisposable;
   },
-  registerHoverProvider(_selector: unknown, provider: unknown): Disposable {
-    recorded.hoverProviders.push(provider);
+  registerHoverProvider(selector: { language: string }, provider: unknown): Disposable {
+    recorded.hoverProviders.push({ language: selector.language, provider });
     return noopDisposable;
   },
-  registerCompletionItemProvider(_selector: unknown, provider: unknown, ..._triggers: string[]): Disposable {
-    recorded.completionProviders.push(provider);
+  registerCompletionItemProvider(selector: { language: string }, provider: unknown, ..._triggers: string[]): Disposable {
+    recorded.completionProviders.push({ language: selector.language, provider });
     return noopDisposable;
   },
-  registerCodeActionsProvider(_selector: unknown, provider: unknown, _meta?: unknown): Disposable {
-    recorded.codeActionProviders.push(provider);
+  registerCodeActionsProvider(selector: { language: string }, provider: unknown, _meta?: unknown): Disposable {
+    recorded.codeActionProviders.push({ language: selector.language, provider });
     return noopDisposable;
   },
   setTextDocumentLanguage(document: unknown, _language: string): Promise<unknown> {

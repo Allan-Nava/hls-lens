@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**42 of 48 items done** · `████████░░` 88%
+**44 of 48 items done** · `█████████░` 92%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -30,10 +30,10 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [v0.16.0 — Grading and fixing](#v0160--grading-and-fixing) | ✅ shipped | 2/2 |
 | [v0.17.0 — Sending it to someone](#v0170--sending-it-to-someone) | ✅ shipped | 2/2 |
 | [v0.18.0 — Against another manifest](#v0180--against-another-manifest) | ✅ shipped | 2/2 |
-| [DASH, all the way](#dash-all-the-way) | ⏳ planned | 0/2 |
 | [v0.19.0 — DASH compared, and across periods](#v0190--dash-compared-and-across-periods) | ✅ shipped | 2/2 |
 | [The extension's interface](#the-extensions-interface) | ⏳ planned | 0/4 |
 | [v0.20.0 — The glue under test](#v0200--the-glue-under-test) | ✅ shipped | 1/1 |
+| [v0.21.0 — DASH drawn and documented](#v0210--dash-drawn-and-documented) | ✅ shipped | 2/2 |
 
 ## v0.1.0 — Reading manifests
 
@@ -206,15 +206,6 @@ The Problems panel is where a defect is fixed, not where it is argued about with
 - [x] **HL-37 — Compare with another manifest**: `src/core/compare.ts` reports what the open manifest declares that another one did not — rungs added, removed or re-rated, rendition groups that came and went, and for a media playlist the version, the target duration, the segment count and an `EXT-X-ENDLIST` that arrived. **Rungs are matched by URI**: a packager keeps the path of a rendition stable far more often than its bitrate, so the URI is what tells "the same rung, re-rated" apart from "a new rung". A text diff answers the same question in a form nobody can read — a manifest is a set of declarations, and the interesting change is which declaration moved, not which line did.
 - [x] **HL-38 — House styles as a starting grade**: `hlsLens.diagnostics.profile` with `apple` (the HLS Authoring Specification: an I-frame playlist and a RESOLUTION stop being advisory) and `low-latency` (a stream sold as such owes the reports and the hold-backs). The catalogue has one opinion per rule and cannot have the right one for everybody — an I-frame playlist is advisory in RFC 8216 and required by Apple, and which you are held to depends on where the stream is going. A profile is a **starting point**: `diagnostics.severity` is applied on top, so a team can take the profile and still argue with one line of it.
 
-## DASH, all the way
-
-DASH has rules, a tree and a status bar, and stops there. Every feature added since v0.11.0 — the timeline, the comparison, the links, the hover — was built for HLS and quietly does nothing, or the wrong thing, for an `.mpd`.
-
-⏳ planned · 0 of 2 · `░░░░░░░░░░`
-
-- [ ] **HL-40 — The timeline for an MPD**: `buildTimeline` takes parsed playlists, so a DASH manifest gets no strip at all. A `<SegmentTimeline>` is exactly the shape the timeline was built to draw — `<S>` elements with `@d` and `@r` are segments with durations — and the periods are the discontinuities.
-- [ ] **HL-41 — Document links and hover in an MPD**: `BaseURL`, `UTCTiming@value` and `@initialization` are the URLs an operator wants to follow, and `$Number$`/`$Time$` templates are worth showing resolved for the first segment. The hover needs a DASH vocabulary in `spec.ts` the way HLS has one — the elements and attributes with what they mean and what values they take.
-
 ## v0.19.0 — DASH compared, and across periods
 
 ✅ shipped · 2 of 2 · `██████████`
@@ -240,3 +231,12 @@ Twelve commands, 84 rules and one webview, and no way to discover any of it: the
 ✅ shipped · 1 of 1 · `██████████`
 
 - [x] **HL-47 — Test the extension host glue**: `test/vscode-stub.ts` is a fake `vscode` — the classes, the enums, and the namespaces recording what they are asked to do — aliased into the test bundle by `esbuild.mjs` and nowhere else. `activate()` now runs under Node, so the glue is driven rather than trusted: a **two-way check between the commands `package.json` declares and the ones `activate` registers** (either direction is a bug that fails nothing at build time), the `source = 'hls-lens'` the quick fixes filter on, a finding from another extension that must not be claimed, `hint → Information`, the tree's sections and their reveal commands, the MPD tree and status bar, the profile graded *under* the user's settings, and the workspace scan's diagnostics being dropped when the file is opened. The alternative was `@vscode/test-electron`, which downloads a copy of VS Code: rejected because this suite is offline by rule and runs in a second. What the stub cannot check is that the real API behaves as modelled — that is the price, and it is written into the file rather than left implied.
+
+## v0.21.0 — DASH drawn and documented
+
+The last two of `DASH, all the way`: the milestone is closed.
+
+✅ shipped · 2 of 2 · `██████████`
+
+- [x] **HL-40 — The timeline for an MPD**: `buildMpdTimeline` reads the `<SegmentTimeline>` of every adaptation set — `@r` expanded, `@timescale` applied — and feeds the **same** layout, axis and out-of-step detection the HLS timeline uses (`layoutRows`, extracted for it). Period boundaries are drawn as discontinuities, which is what they are: crossing one is where a decoder gets reconfigured. An MPD that lists no segments draws **nothing** rather than guessing a segment count from `@duration`, because a strip with an invented number of segments in it is a picture that lies.
+- [x] **HL-41 — Document links and hover in an MPD**: `mpdLinks` finds the URLs (`<BaseURL>`, `@initialization`, `@sourceURL`, `UTCTiming@value`) and deliberately skips the templates — nothing resolves `$Number$`, so a link to `chunk-$Number$.m4s` would offer a request that cannot be made. It reads the text rather than the parsed tree because a link is a *range* and the XML reader keeps lines, not columns; the limitation (a `<BaseURL>` split across lines) is written down. `src/core/dashspec.ts` documents eleven elements with their attributes, and a test asserts that everything the tree, the rules and the timeline read is among them.

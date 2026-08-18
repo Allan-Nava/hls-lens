@@ -17,12 +17,13 @@ import { quickFixesFor } from './core/fixes';
 import { analyzeAcross, LoadedRendition } from './core/crosscheck';
 import { describeChange, diffPlaylists, watchIntervalMs } from './core/watch';
 import { analyzeMpd } from './core/dash';
-import { buildMpdTree, mpdSummary, MpdRow } from './core/mpdtree';
+import { buildMpdTimeline, buildMpdTree, mpdLinks, mpdSummary, MpdRow } from './core/mpdtree';
+import { dashSpec, renderDashHover } from './core/dashspec';
 import { isManifestPath, renderWorkspaceReport, summariseWorkspace, WorkspaceEntry } from './core/workspace';
 import { renderFindingsJson, renderFindingsMarkdown } from './core/report';
 import { compareManifests, compareMpds, describeComparison } from './core/compare';
 import { profileOverrides } from './core/profiles';
-import { buildTimeline, renderTimelineHtml, TimelineTrack } from './core/timeline';
+import { buildTimeline, renderTimelineHtml, TimelineModel, TimelineTrack } from './core/timeline';
 import { isRemote, looksLikePlaylistUri, resolveUri } from './core/uri';
 
 /** Scheme of the read-only documents holding manifests fetched from a URL. */
@@ -69,6 +70,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.languages.registerCodeActionsProvider({ language: 'm3u8' }, new PlaylistFixProvider(), {
       providedCodeActionKinds: [vscode.CodeActionKind.QuickFix],
     }),
+    vscode.languages.registerDocumentLinkProvider({ language: 'dash-mpd' }, new MpdLinkProvider()),
+    vscode.languages.registerHoverProvider({ language: 'dash-mpd' }, new MpdHoverProvider()),
   );
 
   // Diagnostics and the tree follow whatever manifest is in front of the user.
@@ -769,6 +772,33 @@ export class TagCompletionProvider implements vscode.CompletionItemProvider {
 }
 
 /** Code actions: the quick fixes for the findings an edit can settle. */
+/** The URLs of an MPD as document links. Templates are not links: see mpdLinks. */
+export class MpdLinkProvider implements vscode.DocumentLinkProvider {
+  provideDocumentLinks(doc: vscode.TextDocument): vscode.DocumentLink[] {
+    const base = locationOf(doc);
+    return mpdLinks(doc.getText()).map((link) => {
+      const range = new vscode.Range(link.line, link.start, link.line, link.end);
+      const resolved = resolveUri(base, link.uri);
+      return new vscode.DocumentLink(range, isRemote(resolved) ? vscode.Uri.parse(resolved) : vscode.Uri.file(resolved));
+    });
+  }
+}
+
+/** The DASH vocabulary on hover, the counterpart of TagHoverProvider. */
+export class MpdHoverProvider implements vscode.HoverProvider {
+  provideHover(doc: vscode.TextDocument, position: vscode.Position): vscode.Hover | undefined {
+    const line = doc.lineAt(position.line).text;
+    // The element whose opening tag is on this line, and only when the cursor is on
+    // the name itself: hovering a value should not explain the element.
+    const match = /<([A-Za-z][\w.:-]*)/.exec(line);
+    if (!match || match.index === undefined) return undefined;
+    const start = match.index + 1;
+    if (position.character < start || position.character > start + match[1].length) return undefined;
+    const element = dashSpec(match[1]);
+    return element ? new vscode.Hover(new vscode.MarkdownString(renderDashHover(element))) : undefined;
+  }
+}
+
 export class PlaylistFixProvider implements vscode.CodeActionProvider {
   provideCodeActions(doc: vscode.TextDocument, _range: vscode.Range, context: vscode.CodeActionContext): vscode.CodeAction[] {
     const playlist = parsePlaylist(doc.getText());
@@ -1072,8 +1102,15 @@ let timelinePanel: vscode.WebviewPanel | undefined;
 
 async function showTimeline(): Promise<void> {
   const active = activeManifest();
+  const mpd = activeMpdDocument();
+  if (!active && mpd) {
+    // A <SegmentTimeline> is a list of durations, so it goes through the same layout,
+    // the same axis and the same out-of-step detection as a playlist.
+    showTimelinePanel(buildMpdTimeline(mpd.getText()), nameOf(locationOf(mpd)));
+    return;
+  }
   if (!active) {
-    void vscode.window.showWarningMessage('HLS Lens: open a playlist first.');
+    void vscode.window.showWarningMessage('HLS Lens: open a playlist or an .mpd first.');
     return;
   }
 
@@ -1119,8 +1156,12 @@ async function showTimeline(): Promise<void> {
     return;
   }
 
-  const model = buildTimeline(tracks);
-  const html = renderTimelineHtml(model, { title: nameOf(active.location), nonce: randomBytes(16).toString('hex') });
+  showTimelinePanel(buildTimeline(tracks), nameOf(active.location));
+}
+
+/** The panel itself: one at a time, and nothing decided here. */
+function showTimelinePanel(model: TimelineModel, title: string): void {
+  const html = renderTimelineHtml(model, { title, nonce: randomBytes(16).toString('hex') });
 
   if (!timelinePanel) {
     timelinePanel = vscode.window.createWebviewPanel('hlsLens.timeline', 'HLS Timeline', vscode.ViewColumn.Beside, {
@@ -1135,7 +1176,7 @@ async function showTimeline(): Promise<void> {
       if (message?.type === 'reveal' && typeof message.line === 'number') void revealLine(message.line);
     });
   }
-  timelinePanel.title = `HLS Timeline — ${nameOf(active.location)}`;
+  timelinePanel.title = `HLS Timeline — ${title}`;
   timelinePanel.webview.html = html;
   timelinePanel.reveal(vscode.ViewColumn.Beside, true);
 }

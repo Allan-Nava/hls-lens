@@ -17,6 +17,8 @@ import {
   buildMpdNodes,
   buildTree,
   graded,
+  MpdHoverProvider,
+  MpdLinkProvider,
   PlaylistFixProvider,
   severityToVsCode,
   toDiagnostic,
@@ -32,7 +34,8 @@ import { analyzeAcross, LoadedRendition } from '../src/core/crosscheck';
 import { diffPlaylists, describeChange, watchIntervalMs } from '../src/core/watch';
 import { parseXml, findAll, attr } from '../src/core/xml';
 import { parseIsoDuration, analyzeMpd } from '../src/core/dash';
-import { buildMpdTree, mpdSummary } from '../src/core/mpdtree';
+import { buildMpdTree, mpdSummary, buildMpdTimeline, mpdLinks } from '../src/core/mpdtree';
+import { dashSpec, renderDashHover } from '../src/core/dashspec';
 import { frontMatter, renderMarkdown, renderPage, pageTitle } from '../src/core/markdown';
 import { buildTimeline, niceTicks, renderTimelineHtml } from '../src/core/timeline';
 import { isManifestPath, summariseWorkspace, renderWorkspaceReport } from '../src/core/workspace';
@@ -1832,6 +1835,139 @@ async function main(): Promise<void> {
     assert.ok(dropped.edit.kind === 'replace' && dropped.edit.text.includes('AUTOSELECT=YES,URI="a.m3u8"'));
   });
 
+  // ------------------------------------------------- the timeline of an MPD
+  const MPD_TIMELINE = [
+    '<MPD type="static" mediaPresentationDuration="PT16S">',
+    '  <Period id="p0" start="PT0S">',
+    '    <AdaptationSet contentType="video" segmentAlignment="true">',
+    '      <SegmentTemplate media="$RepresentationID$/$Number$.m4s" timescale="1000">',
+    '        <SegmentTimeline>',
+    '          <S t="0" d="4000" r="1"/>',
+    '          <S d="2000"/>',
+    '        </SegmentTimeline>',
+    '      </SegmentTemplate>',
+    '      <Representation id="1080p" bandwidth="6100000"/>',
+    '    </AdaptationSet>',
+    '    <AdaptationSet contentType="audio">',
+    '      <SegmentTemplate media="a/$Number$.m4s" timescale="1000">',
+    '        <SegmentTimeline>',
+    '          <S t="0" d="4000" r="2"/>',
+    '        </SegmentTimeline>',
+    '      </SegmentTemplate>',
+    '      <Representation id="aac" bandwidth="128000"/>',
+    '    </AdaptationSet>',
+    '  </Period>',
+    '</MPD>',
+  ].join('\n');
+
+  await test('a SegmentTimeline becomes a strip, @r and all', () => {
+    const model = buildMpdTimeline(MPD_TIMELINE);
+    assert.strictEqual(model.rows.length, 2);
+    assert.deepStrictEqual(
+      model.rows.map((r) => r.label),
+      ['video', 'audio'],
+    );
+    // r="1" is the segment plus one more: three <S> elements, four segments.
+    assert.deepStrictEqual(
+      model.rows[0].spans.map((s) => s.duration),
+      [4, 4, 2],
+    );
+    assert.deepStrictEqual(
+      model.rows[0].spans.map((s) => s.start),
+      [0, 4, 8],
+    );
+    assert.deepStrictEqual(
+      model.rows[1].spans.map((s) => s.duration),
+      [4, 4, 4],
+    );
+    assert.strictEqual(model.duration, 12);
+    // Every span points at the <S> that declares it.
+    assert.ok(MPD_TIMELINE.split('\n')[model.rows[0].spans[2].line].includes('d="2000"'));
+  });
+
+  await test('the audio and video of an MPD are checked against each other like rungs', () => {
+    // The rows end at different times — the video at 11s, the audio at 12s — so the
+    // last boundary of each belongs to one row only, and that is the drift.
+    const drifting = MPD_TIMELINE.replace('<S d="2000"/>', '<S d="2000"/>\n          <S d="1000"/>');
+    const model = buildMpdTimeline(drifting);
+    assert.ok(model.misaligned.length > 0, JSON.stringify(model.misaligned));
+    assert.ok(model.rows.some((r) => !r.aligned));
+  });
+
+  await test('a period boundary is drawn as a discontinuity', () => {
+    const twoPeriods = MPD_TIMELINE.replace(
+      '</MPD>',
+      [
+        '  <Period id="ad" start="PT12S">',
+        '    <AdaptationSet contentType="video" segmentAlignment="true">',
+        '      <SegmentTemplate media="ad/$Number$.m4s" timescale="1000">',
+        '        <SegmentTimeline><S t="0" d="4000"/></SegmentTimeline>',
+        '      </SegmentTemplate>',
+        '      <Representation id="1080p" bandwidth="6100000"/>',
+        '    </AdaptationSet>',
+        '  </Period>',
+        '</MPD>',
+      ].join('\n'),
+    );
+    const video = buildMpdTimeline(twoPeriods).rows.find((r) => r.label === 'video')!;
+    // The first segment of the second period is where the presentation changes.
+    const boundary = video.spans.find((s) => s.discontinuity);
+    assert.ok(boundary, JSON.stringify(video.spans));
+    assert.strictEqual(boundary!.start, 12);
+  });
+
+  await test('an MPD with no timeline at all draws nothing rather than guessing', () => {
+    const noTimeline = '<MPD type="static"><Period id="p0"><AdaptationSet contentType="video"/></Period></MPD>';
+    assert.deepStrictEqual(buildMpdTimeline(noTimeline).rows, []);
+    assert.deepStrictEqual(buildMpdTimeline('<html>404</html>').rows, []);
+  });
+
+  // -------------------------------------------------- links and hover in an MPD
+  await test('the URLs of an MPD are found, and the templates are left alone', () => {
+    const text = [
+      '<MPD>',
+      '  <BaseURL>https://cdn.example.com/live/</BaseURL>',
+      '  <UTCTiming schemeIdUri="urn:mpeg:dash:utc:http-iso:2014" value="https://time.example.com/"/>',
+      '  <Period>',
+      '    <AdaptationSet contentType="video">',
+      '      <SegmentTemplate initialization="init.mp4" media="chunk-$Number$.m4s"/>',
+      '    </AdaptationSet>',
+      '  </Period>',
+      '</MPD>',
+    ].join('\n');
+    const links = mpdLinks(text);
+    const targets = links.map((l) => l.uri);
+    assert.ok(targets.includes('https://cdn.example.com/live/'), JSON.stringify(targets));
+    assert.ok(targets.includes('https://time.example.com/'), JSON.stringify(targets));
+    assert.ok(targets.includes('init.mp4'), JSON.stringify(targets));
+    // A template is not a URL: nothing resolves $Number$, so linking it would offer
+    // the user a request that cannot be made.
+    assert.ok(!targets.some((t) => t.includes('$')), JSON.stringify(targets));
+
+    // Each link knows the line and the columns it covers, so the editor can underline it.
+    const base = links.find((l) => l.uri.startsWith('https://cdn'))!;
+    assert.strictEqual(base.line, 1);
+    assert.strictEqual(text.split('\n')[base.line].slice(base.start, base.end), 'https://cdn.example.com/live/');
+  });
+
+  await test('the DASH vocabulary is documented the way the HLS one is', () => {
+    const spec = dashSpec('AdaptationSet');
+    assert.ok(spec, 'AdaptationSet is documented');
+    assert.ok(spec!.summary.length > 0);
+    assert.ok(spec!.attributes.some((a) => a.name === 'segmentAlignment'));
+
+    const hover = renderDashHover(spec!);
+    assert.ok(hover.includes('AdaptationSet'));
+    assert.ok(hover.includes('segmentAlignment'));
+    assert.strictEqual(dashSpec('NotAnElement'), undefined);
+
+    // Everything the MPD tree and the dash/* rules read should be documented, or the
+    // hover is a reference with holes exactly where the reader is looking.
+    for (const element of ['MPD', 'Period', 'AdaptationSet', 'Representation', 'SegmentTemplate', 'SegmentTimeline', 'S', 'UTCTiming', 'BaseURL']) {
+      assert.ok(dashSpec(element), `${element} is documented`);
+    }
+  });
+
   // ------------------------------------------------------------------ mpd tree
   const MPD_TREE = [
     '<?xml version="1.0"?>',
@@ -2118,10 +2254,27 @@ async function main(): Promise<void> {
       assert.ok(stub.recorded.collections.has(name), `${name} collection`);
     }
     assert.ok(stub.recorded.treeProviders.has('hlsLens.explorer'));
-    assert.strictEqual(stub.recorded.linkProviders.length, 1);
-    assert.strictEqual(stub.recorded.hoverProviders.length, 1);
-    assert.strictEqual(stub.recorded.completionProviders.length, 1);
-    assert.strictEqual(stub.recorded.codeActionProviders.length, 1);
+    // Which language a provider is registered for is the part that can silently be
+    // wrong: an MPD provider on the m3u8 selector never runs, and nothing says so.
+    const languages = (registered: Array<{ language: string }>): string[] => registered.map((r) => r.language).sort();
+    assert.deepStrictEqual(languages(stub.recorded.linkProviders), ['dash-mpd', 'm3u8']);
+    assert.deepStrictEqual(languages(stub.recorded.hoverProviders), ['dash-mpd', 'm3u8']);
+    assert.deepStrictEqual(languages(stub.recorded.completionProviders), ['m3u8']);
+    assert.deepStrictEqual(languages(stub.recorded.codeActionProviders), ['m3u8']);
+  });
+
+  await test('the MPD providers answer for an MPD and only on the element name', () => {
+    const text = '<MPD>\n  <BaseURL>https://cdn.example.com/live/</BaseURL>\n</MPD>\n';
+    const doc = stub.fakeDocument(text, '/w/stream.mpd', 'dash-mpd');
+
+    const links = new MpdLinkProvider().provideDocumentLinks(doc as never);
+    assert.strictEqual(links.length, 1);
+    assert.strictEqual(links[0].range.start.line, 1);
+
+    const hover = new MpdHoverProvider();
+    // Column 3 is inside "MPD" on the first line; column 0 is the '<'.
+    assert.ok(hover.provideHover(doc as never, new stub.Position(0, 2) as never), 'the element name is explained');
+    assert.strictEqual(hover.provideHover(doc as never, new stub.Position(1, 40) as never), undefined, 'a URL is not an element');
   });
 
   await test('a hint becomes Information, not Hint', () => {
