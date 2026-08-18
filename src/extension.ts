@@ -17,6 +17,7 @@ import { quickFixesFor } from './core/fixes';
 import { analyzeAcross, LoadedRendition } from './core/crosscheck';
 import { describeChange, diffPlaylists, watchIntervalMs } from './core/watch';
 import { analyzeMpd } from './core/dash';
+import { buildMpdTree, mpdSummary, MpdRow } from './core/mpdtree';
 import { isManifestPath, renderWorkspaceReport, summariseWorkspace, WorkspaceEntry } from './core/workspace';
 import { buildTimeline, renderTimelineHtml, TimelineTrack } from './core/timeline';
 import { isRemote, looksLikePlaylistUri, resolveUri } from './core/uri';
@@ -85,7 +86,8 @@ export function activate(context: vscode.ExtensionContext): void {
       refresh();
     }),
     vscode.workspace.onDidChangeTextDocument((event) => {
-      if (!isPlaylistDocument(event.document)) return;
+      // MPDs are edited too: without them here an .mpd only refreshed on save.
+      if (!isPlaylistDocument(event.document) && !isMpdDocument(event.document)) return;
       if (debounce) clearTimeout(debounce);
       // Analysis is cheap, but re-running it on every keystroke makes the squiggles
       // flicker while a line is half-typed.
@@ -238,7 +240,15 @@ function activeManifest(): ActiveManifest | undefined {
 function updateStatusBar(): void {
   const active = activeManifest();
   if (!active || active.playlist.kind === 'unknown') {
-    statusBar.hide();
+    const mpd = activeMpdDocument();
+    if (!mpd) {
+      statusBar.hide();
+      return;
+    }
+    statusBar.text = `$(list-tree) ${mpdSummary(mpd.getText())}`;
+    statusBar.tooltip = 'HLS Lens — click to open the manifest tree';
+    statusBar.command = 'hlsLens.refresh';
+    statusBar.show();
     return;
   }
   // While the watch runs, the status bar is where it lives: a poller with no visible
@@ -288,8 +298,9 @@ class ManifestTreeProvider implements vscode.TreeDataProvider<TreeNode> {
   getChildren(element?: TreeNode): TreeNode[] {
     if (element) return element.children;
     const active = activeManifest();
-    if (!active) return [];
-    return buildTree(active);
+    if (active) return buildTree(active);
+    const mpd = activeMpdDocument();
+    return mpd ? buildMpdNodes(mpd) : [];
   }
 }
 
@@ -368,20 +379,65 @@ function buildTree(active: ActiveManifest): TreeNode[] {
     nodes.push(section(`Init & keys (${children.length})`, 'key', children));
   }
 
-  if (findings.length > 0) {
-    const children = findings.map((finding) => {
-      const node = new TreeNode(finding.rule, 'finding', vscode.TreeItemCollapsibleState.None, [], '', finding.line);
-      node.description = `line ${finding.line + 1} · ${finding.message}`;
-      node.tooltip = new vscode.MarkdownString(`**${finding.rule}**\n\n${finding.message}${finding.hint ? `\n\n→ ${finding.hint}` : ''}`);
-      node.iconPath = new vscode.ThemeIcon(
-        finding.severity === 'error' ? 'error' : finding.severity === 'warning' ? 'warning' : 'info',
-      );
-      return node;
-    });
-    nodes.push(section(`Problems (${findings.length})`, 'warning', children, vscode.TreeItemCollapsibleState.Expanded));
-  }
+  if (findings.length > 0) nodes.push(problemsSection(findings));
 
   return nodes;
+}
+
+/** The findings as a section, the same in the playlist tree and the MPD one. */
+function problemsSection(findings: Finding[]): TreeNode {
+  const children = findings.map((finding) => {
+    const node = new TreeNode(finding.rule, 'finding', vscode.TreeItemCollapsibleState.None, [], '', finding.line);
+    node.description = `line ${finding.line + 1} · ${finding.message}`;
+    node.tooltip = new vscode.MarkdownString(`**${finding.rule}**\n\n${finding.message}${finding.hint ? `\n\n→ ${finding.hint}` : ''}`);
+    node.iconPath = new vscode.ThemeIcon(finding.severity === 'error' ? 'error' : finding.severity === 'warning' ? 'warning' : 'info');
+    return node;
+  });
+  return section(`Problems (${findings.length})`, 'warning', children, vscode.TreeItemCollapsibleState.Expanded);
+}
+
+/**
+ * The MPD as a tree. DASH manifests have had diagnostics since v0.8.0 and no shape:
+ * the ladder is in the file, nested four elements deep and spread across attributes,
+ * which is exactly the reading this extension exists to do for you.
+ */
+function buildMpdNodes(doc: vscode.TextDocument): TreeNode[] {
+  const text = doc.getText();
+  const nodes: TreeNode[] = [];
+  const summary = new TreeNode(mpdSummary(text), 'info', vscode.TreeItemCollapsibleState.None);
+  summary.description = 'DASH';
+  summary.iconPath = new vscode.ThemeIcon('list-tree');
+  summary.tooltip = locationOf(doc);
+  nodes.push(summary);
+
+  const icons: Record<MpdRow['kind'], string> = { period: 'symbol-namespace', adaptation: 'server', representation: 'device-camera-video' };
+  const toNode = (row: MpdRow): TreeNode => {
+    const node = new TreeNode(
+      row.label,
+      row.children.length > 0 ? 'section' : 'row',
+      row.children.length > 0 ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.None,
+      row.children.map(toNode),
+      '',
+      row.line,
+    );
+    node.description = row.description;
+    node.tooltip = new vscode.MarkdownString(row.tooltip);
+    node.iconPath = new vscode.ThemeIcon(icons[row.kind]);
+    return node;
+  };
+  nodes.push(...buildMpdTree(text).map(toNode));
+
+  const config = vscode.workspace.getConfiguration('hlsLens');
+  const skip = config.get<string[]>('diagnostics.skip', []);
+  const findings = analyzeMpd(text).filter((f) => !skip.includes(f.rule) && !skip.includes(f.rule.split('/')[0]));
+  if (findings.length > 0) nodes.push(problemsSection(findings));
+  return nodes;
+}
+
+/** The active editor when it holds an MPD (and not a playlist). */
+function activeMpdDocument(): vscode.TextDocument | undefined {
+  const doc = vscode.window.activeTextEditor?.document;
+  return doc && isMpdDocument(doc) && !isPlaylistDocument(doc) ? doc : undefined;
 }
 
 function section(

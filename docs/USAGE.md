@@ -195,7 +195,9 @@ question about the media, and that is [segcheck](https://github.com/Allan-Nava/s
 
 ## DASH manifests
 
-Open an `.mpd` and the `dash/*` rules report on it in the same Problems panel, on the line to edit. The same stream is usually packaged both ways from one mezzanine, and the defects are the same ones: a duration that disagrees with the segments, a hole in the timeline, a live manifest with no clock.
+Open an `.mpd` and it is read the way a playlist is: the **HLS** view shows the manifest's shape — periods, adaptation sets and the representations under them, with bitrate, resolution and frame rate — the status bar says what the manifest is (`static · 1 period · 2 adaptation sets · 5 representations · 10:30`), and the `dash/*` rules report in the same Problems panel, on the line to edit. Clicking a row reveals its line.
+
+The defects are the same ones a playlist has: The same stream is usually packaged both ways from one mezzanine, and the defects are the same ones: a duration that disagrees with the segments, a hole in the timeline, a live manifest with no clock.
 
 | Rule | What it catches |
 |---|---|

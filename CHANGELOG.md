@@ -3,6 +3,20 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.15.0] - 2026-08-18
+
+DASH aveva le regole dalla `v0.8.0` e nessuna forma.
+
+### Aggiunto
+
+- **L'MPD come albero** (`src/core/mpdtree.ts`): periodi → adaptation set → representation, ognuno con la propria riga, il proprio indice di riga e i numeri che uno cerca davvero (bitrate, risoluzione, frame rate, lingua, se il set è allineato). La scala DASH *è* nel file, ma annidata quattro elementi in profondità e sparsa fra gli attributi: leggerla a occhio è esattamente il lavoro che questa estensione esiste per togliere. Cliccare una riga rivela la riga del file, e i Problems stanno in fondo come in una playlist.
+- **`mpdSummary` nella status bar**: `static · 1 period · 2 adaptation sets · 5 representations · 10:30`. Un manifest dinamico non ha una durata totale da dichiarare, e infatti non ne dichiara una.
+- `formatBandwidth` è quello di `ladder.ts`: un rung DASH e un rung HLS si leggono uguali.
+
+### Corretto
+
+- **Editare un `.mpd` non aggiornava niente fino al salvataggio**: `onDidChangeTextDocument` filtrava solo le playlist, quindi le diagnostics e l'albero di un MPD restavano fermi mentre lo si scriveva.
+
 ## [0.14.0] - 2026-08-18
 
 Il manifest col difetto è quello che nessuno ha pensato di aprire.
@@ -290,6 +304,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.15.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.15.0
 [0.14.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.14.0
 [0.13.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.13.0
 [0.12.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.12.0

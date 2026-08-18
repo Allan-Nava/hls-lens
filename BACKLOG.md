@@ -129,3 +129,9 @@ name — and where nothing fails loudly when a name is wrong. 73 → 81.
 The manifest with the defect is the one nobody thought to open.
 
 - [x] **HL-31 — Check every manifest in the workspace**: `HLS Lens: Check All Manifests in Workspace` reads every `.m3u8`, `.m3u` and `.mpd` the workspace holds — excluded by `hlsLens.workspace.exclude`, cancellable, capped at 2000 files with the cap **stated** when it is hit — and puts the findings in their own diagnostic collection, so the Problems panel lists files that were never loaded. `src/core/workspace.ts` holds the part that is logic: what counts as a manifest, the ranking (errors, then warnings, then hints, then path, so two scans of the same tree are diffable) and the report. Opening a manifest drops the scan's copy of its findings: the live diagnostics are authoritative and the two collections would otherwise double every entry.
+
+## v0.15.0 — DASH gets a shape
+
+The rules have read MPDs since v0.8.0. The tree never did.
+
+- [x] **HL-32 — The MPD as a tree**: `src/core/mpdtree.ts` with `buildMpdTree` (periods → adaptation sets → representations, each with its own line index) and `mpdSummary` for the status bar. An open `.mpd` now shows its shape in the HLS view, with the Problems at the bottom as a playlist has, and clicking a row reveals its line. The DASH ladder *is* in the file — nested four elements deep and spread across attributes, which is exactly the reading this extension exists to do for you.

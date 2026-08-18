@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**32 of 32 items done** · `██████████` 100%
+**33 of 33 items done** · `██████████` 100%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -26,6 +26,7 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [v0.12.0 — The rest of the vocabulary](#v0120--the-rest-of-the-vocabulary) | ✅ shipped | 3/3 |
 | [v0.13.0 — Rendition groups](#v0130--rendition-groups) | ✅ shipped | 3/3 |
 | [v0.14.0 — The whole workspace](#v0140--the-whole-workspace) | ✅ shipped | 1/1 |
+| [v0.15.0 — DASH gets a shape](#v0150--dash-gets-a-shape) | ✅ shipped | 1/1 |
 
 ## v0.1.0 — Reading manifests
 
@@ -162,3 +163,11 @@ The manifest with the defect is the one nobody thought to open.
 ✅ shipped · 1 of 1 · `██████████`
 
 - [x] **HL-31 — Check every manifest in the workspace**: `HLS Lens: Check All Manifests in Workspace` reads every `.m3u8`, `.m3u` and `.mpd` the workspace holds — excluded by `hlsLens.workspace.exclude`, cancellable, capped at 2000 files with the cap **stated** when it is hit — and puts the findings in their own diagnostic collection, so the Problems panel lists files that were never loaded. `src/core/workspace.ts` holds the part that is logic: what counts as a manifest, the ranking (errors, then warnings, then hints, then path, so two scans of the same tree are diffable) and the report. Opening a manifest drops the scan's copy of its findings: the live diagnostics are authoritative and the two collections would otherwise double every entry.
+
+## v0.15.0 — DASH gets a shape
+
+The rules have read MPDs since v0.8.0. The tree never did.
+
+✅ shipped · 1 of 1 · `██████████`
+
+- [x] **HL-32 — The MPD as a tree**: `src/core/mpdtree.ts` with `buildMpdTree` (periods → adaptation sets → representations, each with its own line index) and `mpdSummary` for the status bar. An open `.mpd` now shows its shape in the HLS view, with the Problems at the bottom as a playlist has, and clicking a row reveals its line. The DASH ladder *is* in the file — nested four elements deep and spread across attributes, which is exactly the reading this extension exists to do for you.

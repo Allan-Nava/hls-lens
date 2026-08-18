@@ -18,6 +18,7 @@ import { analyzeAcross, LoadedRendition } from '../src/core/crosscheck';
 import { diffPlaylists, describeChange, watchIntervalMs } from '../src/core/watch';
 import { parseXml, findAll, attr } from '../src/core/xml';
 import { parseIsoDuration, analyzeMpd } from '../src/core/dash';
+import { buildMpdTree, mpdSummary } from '../src/core/mpdtree';
 import { frontMatter, renderMarkdown, renderPage, pageTitle } from '../src/core/markdown';
 import { buildTimeline, niceTicks, renderTimelineHtml } from '../src/core/timeline';
 import { isManifestPath, summariseWorkspace, renderWorkspaceReport } from '../src/core/workspace';
@@ -1737,6 +1738,69 @@ async function main(): Promise<void> {
     // leaks which manifests were opened.
     assert.ok(!/(src|href)="https?:/.test(html), 'no external resource');
     assert.strictEqual(html, renderTimelineHtml(model, { title: 'live.m3u8', nonce: 'n0nce' }));
+  });
+
+  // ------------------------------------------------------------------ mpd tree
+  const MPD_TREE = [
+    '<?xml version="1.0"?>',
+    '<MPD type="static" mediaPresentationDuration="PT10M30S">',
+    '  <Period id="main" start="PT0S">',
+    '    <AdaptationSet id="1" contentType="video" segmentAlignment="true">',
+    '      <Representation id="1080p" bandwidth="6100000" width="1920" height="1080" codecs="avc1.640028"/>',
+    '      <Representation id="720p" bandwidth="3300000" width="1280" height="720" codecs="avc1.4d4028"/>',
+    '    </AdaptationSet>',
+    '    <AdaptationSet id="2" contentType="audio" lang="en">',
+    '      <Representation id="audio-en" bandwidth="128000" codecs="mp4a.40.2"/>',
+    '    </AdaptationSet>',
+    '  </Period>',
+    '</MPD>',
+  ].join('\n');
+
+  await test('the MPD tree nests representations under their adaptation set and period', () => {
+    const rows = buildMpdTree(MPD_TREE);
+    assert.strictEqual(rows.length, 1);
+    assert.strictEqual(rows[0].kind, 'period');
+    assert.ok(rows[0].label.includes('main'), rows[0].label);
+    assert.deepStrictEqual(
+      rows[0].children.map((set) => set.label),
+      ['video', 'audio'],
+    );
+    const video = rows[0].children[0];
+    assert.deepStrictEqual(
+      video.children.map((rep) => rep.label),
+      ['1080p', '720p'],
+    );
+    // Every row points at the line that declares it, so clicking one reveals it.
+    assert.ok(MPD_TREE.split('\n')[video.children[1].line].includes('id="720p"'));
+    assert.ok(MPD_TREE.split('\n')[rows[0].line].includes('<Period'));
+  });
+
+  await test('an MPD row describes what a person is looking for', () => {
+    const rows = buildMpdTree(MPD_TREE);
+    const [video, audio] = rows[0].children;
+    assert.ok(video.children[0].description.includes('1920x1080'), video.children[0].description);
+    assert.ok(video.children[0].description.includes('6.10 Mbps'), video.children[0].description);
+    assert.ok(video.description.includes('2 representations'), video.description);
+    assert.ok(audio.description.includes('en'), audio.description);
+    // The codecs belong in the tooltip, not in a row that has to stay readable.
+    assert.ok(video.children[0].tooltip.includes('avc1.640028'));
+  });
+
+  await test('the MPD summary says what the manifest is', () => {
+    const summary = mpdSummary(MPD_TREE);
+    assert.ok(summary.includes('static'), summary);
+    assert.ok(summary.includes('10:30'), summary);
+    assert.ok(summary.includes('3 representations'), summary);
+
+    // A live manifest has no duration to state, and says so by not stating one.
+    const live = MPD_TREE.replace('type="static" mediaPresentationDuration="PT10M30S"', 'type="dynamic"');
+    assert.ok(mpdSummary(live).includes('dynamic'), mpdSummary(live));
+    assert.ok(!mpdSummary(live).includes('10:30'));
+  });
+
+  await test('a file that is not an MPD has no tree and says so', () => {
+    assert.deepStrictEqual(buildMpdTree('<html><body>404</body></html>'), []);
+    assert.strictEqual(mpdSummary('<html><body>404</body></html>'), 'not a DASH manifest');
   });
 
   // ----------------------------------------------------------------- workspace
