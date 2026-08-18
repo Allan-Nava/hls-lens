@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**31 of 31 items done** · `██████████` 100%
+**32 of 32 items done** · `██████████` 100%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -25,6 +25,7 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [v0.11.0 — Timeline](#v0110--timeline) | ✅ shipped | 1/1 |
 | [v0.12.0 — The rest of the vocabulary](#v0120--the-rest-of-the-vocabulary) | ✅ shipped | 3/3 |
 | [v0.13.0 — Rendition groups](#v0130--rendition-groups) | ✅ shipped | 3/3 |
+| [v0.14.0 — The whole workspace](#v0140--the-whole-workspace) | ✅ shipped | 1/1 |
 
 ## v0.1.0 — Reading manifests
 
@@ -153,3 +154,11 @@ Eight rules on `EXT-X-MEDIA`, the one part of a master a player resolves entirel
 - [x] **HL-28 — The rendition on its own**: `master/rendition-missing-attributes` (no `TYPE`, `GROUP-ID` or `NAME`, or a `TYPE` the spec does not define), `master/rendition-uri` (subtitles with no `URI`, and its mirror: closed captions with a `URI`, which the spec forbids, or with no `INSTREAM-ID`) and `master/rendition-forced` (`FORCED=YES` on anything that is not subtitles).
 - [x] **HL-29 — The group as a whole**: `master/rendition-default-not-autoselect` (`DEFAULT=YES` with `AUTOSELECT=NO` — play this unless told otherwise, and never pick it automatically), `master/rendition-duplicate-name` (two identical entries in a player's track picker) and `master/audio-group-mixed-channels` (a group that mixes stereo and 5.1, so changing language changes the mix).
 - [x] **HL-30 — The groups against the variants**: `master/unused-group`, the mirror of `master/undefined-group` — a group no variant names is encoded, published and cached and no player can reach it — and `master/inconsistent-groups`, variants that do not all reference the same groups, which makes having the alternate audio a function of the viewer's connection at that moment.
+
+## v0.14.0 — The whole workspace
+
+The manifest with the defect is the one nobody thought to open.
+
+✅ shipped · 1 of 1 · `██████████`
+
+- [x] **HL-31 — Check every manifest in the workspace**: `HLS Lens: Check All Manifests in Workspace` reads every `.m3u8`, `.m3u` and `.mpd` the workspace holds — excluded by `hlsLens.workspace.exclude`, cancellable, capped at 2000 files with the cap **stated** when it is hit — and puts the findings in their own diagnostic collection, so the Problems panel lists files that were never loaded. `src/core/workspace.ts` holds the part that is logic: what counts as a manifest, the ranking (errors, then warnings, then hints, then path, so two scans of the same tree are diffable) and the report. Opening a manifest drops the scan's copy of its findings: the live diagnostics are authoritative and the two collections would otherwise double every entry.

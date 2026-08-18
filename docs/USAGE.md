@@ -65,6 +65,26 @@ Three findings come with a quick fix (the lightbulb, or `⌘.`):
 
 Nothing else is offered a fix. A missing `CODECS` string, a badly spaced ladder or a key served over plaintext HTTP all need a decision that an editor command has no business making.
 
+## Checking the whole workspace
+
+The diagnostics in the editor only exist for a document that is loaded — the one manifest you are
+already looking at. **HLS Lens: Check All Manifests in Workspace** reads every `.m3u8`, `.m3u` and
+`.mpd` in the folder instead, and fills the Problems panel with what it finds, files nobody has
+opened included.
+
+The results live in their own diagnostic collection. Opening one of those manifests replaces its
+entries with the live ones, so nothing is ever listed twice.
+
+| | |
+|---|---|
+| What is scanned | `**/*.{m3u8,m3u,mpd}`, minus `hlsLens.workspace.exclude` (`**/node_modules/**` by default) |
+| Settings honoured | `diagnostics.skip`, `diagnostics.minSeverity`, and both thresholds |
+| Cap | 2000 manifests — when the scan stops there it says so in the output channel |
+
+The report in the **HLS Lens** output channel ranks the files worst first: errors, then warnings,
+then hints, then the path. The last tie-break is what makes two scans of the same tree comparable,
+so a report can be diffed against yesterday's.
+
 ## Checking the renditions together
 
 `HLS Lens: Check Renditions Together` reads every playable rung of the open master — over HTTP when the master came from a URL, off disk when it is a file — and compares them with each other. The findings land in the Problems panel on the master's own `EXT-X-STREAM-INF` lines, in their own collection, because that is the line that names the rendition that diverges.

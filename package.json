@@ -2,7 +2,7 @@
   "name": "hls-lens",
   "displayName": "HLS Lens",
   "description": "Read HLS manifests in VS Code: inline diagnostics on m3u8 playlists, the bitrate ladder as a tree, and a deep segment check with segcheck.",
-  "version": "0.13.0",
+  "version": "0.14.0",
   "publisher": "allannava95",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -143,6 +143,11 @@
         "command": "hlsLens.showTimeline",
         "title": "HLS Lens: Show Timeline",
         "icon": "$(graph-line)"
+      },
+      {
+        "command": "hlsLens.checkWorkspace",
+        "title": "HLS Lens: Check All Manifests in Workspace",
+        "icon": "$(search)"
       },
       {
         "command": "hlsLens.showRules",
@@ -287,6 +292,11 @@
           "type": "number",
           "default": 0,
           "description": "Seconds between reloads of a watched live playlist. 0 uses the playlist's own EXT-X-TARGETDURATION; the floor is 2 seconds either way."
+        },
+        "hlsLens.workspace.exclude": {
+          "type": "string",
+          "default": "**/node_modules/**",
+          "description": "Glob excluded when scanning the workspace for manifests."
         }
       }
     }

@@ -20,6 +20,7 @@ import { parseXml, findAll, attr } from '../src/core/xml';
 import { parseIsoDuration, analyzeMpd } from '../src/core/dash';
 import { frontMatter, renderMarkdown, renderPage, pageTitle } from '../src/core/markdown';
 import { buildTimeline, niceTicks, renderTimelineHtml } from '../src/core/timeline';
+import { isManifestPath, summariseWorkspace, renderWorkspaceReport } from '../src/core/workspace';
 import { analyze, RULES, Finding, Severity } from '../src/core/analyze';
 import { buildLadder, renditionRows, ladderSummary, formatBandwidth, formatResolution } from '../src/core/ladder';
 import { resolveUri, baseOf, isRemote, isPlainHttp, looksLikePlaylistUri } from '../src/core/uri';
@@ -1736,6 +1737,56 @@ async function main(): Promise<void> {
     // leaks which manifests were opened.
     assert.ok(!/(src|href)="https?:/.test(html), 'no external resource');
     assert.strictEqual(html, renderTimelineHtml(model, { title: 'live.m3u8', nonce: 'n0nce' }));
+  });
+
+  // ----------------------------------------------------------------- workspace
+  await test('a manifest is recognised by its extension, and nothing else is', () => {
+    for (const path of ['live/master.m3u8', 'a.M3U8', 'old/playlist.m3u', 'dash/stream.mpd', 'DASH/STREAM.MPD']) {
+      assert.ok(isManifestPath(path), path);
+    }
+    for (const path of ['notes.txt', 'seg-00001.ts', 'video.mp4', 'm3u8', 'a.m3u8.bak']) {
+      assert.ok(!isManifestPath(path), path);
+    }
+  });
+
+  await test('the workspace summary counts by severity and ranks the worst first', () => {
+    const finding = (rule: string, severity: Severity): Finding => ({ rule, severity, line: 0, message: rule });
+    const entries = [
+      { path: 'b.m3u8', findings: [finding('x', 'warning'), finding('y', 'hint')] },
+      { path: 'a.m3u8', findings: [] },
+      { path: 'c.m3u8', findings: [finding('x', 'error'), finding('y', 'warning')] },
+      // Same shape as b.m3u8: the tie breaks on the path, so the report is stable.
+      { path: 'a2.m3u8', findings: [finding('x', 'warning'), finding('y', 'hint')] },
+    ];
+    const summary = summariseWorkspace(entries);
+    assert.strictEqual(summary.files, 4);
+    assert.strictEqual(summary.clean, 1);
+    assert.deepStrictEqual(summary.counts, { errors: 1, warnings: 3, hints: 2 });
+    assert.deepStrictEqual(
+      summary.ranked.map((e) => e.path),
+      ['c.m3u8', 'a2.m3u8', 'b.m3u8'],
+    );
+  });
+
+  await test('the workspace report says what it left out', () => {
+    const finding = (severity: Severity): Finding => ({ rule: 'r', severity, line: 0, message: 'm' });
+    const entries = Array.from({ length: 5 }, (_unused, i) => ({
+      path: `f${i}.m3u8`,
+      findings: [finding('error')],
+    }));
+    const lines = renderWorkspaceReport(summariseWorkspace(entries), { limit: 2 });
+    assert.ok(lines[0].includes('5 manifests'), lines[0]);
+    assert.strictEqual(lines.filter((l) => l.includes('.m3u8')).length, 2);
+    // A cap that is not stated reads as "this is everything".
+    assert.ok(lines.some((l) => l.includes('3 more')), JSON.stringify(lines));
+    assert.deepStrictEqual(lines, renderWorkspaceReport(summariseWorkspace(entries), { limit: 2 }));
+  });
+
+  await test('a clean workspace says so in one line', () => {
+    const lines = renderWorkspaceReport(summariseWorkspace([{ path: 'a.m3u8', findings: [] }]));
+    assert.strictEqual(lines.length, 1);
+    assert.ok(lines[0].includes('1 manifest'), lines[0]);
+    assert.ok(!lines[0].includes('manifests'), 'one manifest is not plural');
   });
 
   // ---------------------------------------------------------- rendition groups

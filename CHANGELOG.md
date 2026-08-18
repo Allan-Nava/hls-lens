@@ -3,6 +3,22 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.14.0] - 2026-08-18
+
+Il manifest col difetto è quello che nessuno ha pensato di aprire.
+
+### Aggiunto
+
+- **`HLS Lens: Check All Manifests in Workspace`**: legge ogni `.m3u8`, `.m3u` e `.mpd` della cartella e riempie il pannello Problems, **file mai aperti inclusi**. Fino a ieri l'estensione si attivava su `workspaceContains` e poi aspettava che qualcuno cliccasse un file — cioè esattamente il file che uno ha già in mente, non quello rotto.
+  - `src/core/workspace.ts` tiene la parte che è logica: cosa conta come manifest, il ranking (errori, poi warning, poi hint, poi **path**) e il report. L'ultimo criterio non è cosmetico: è ciò che rende due scansioni dello stesso albero confrontabili, quindi un report si può diffare con quello di ieri.
+  - Quando il report tronca **dice quanti file ha lasciato fuori**, e quando la scansione si ferma al tetto dei 2000 manifest lo scrive nell'output. Un elenco troncato senza nota si legge come "questo è tutto", che è l'unico modo in cui un report può mentire.
+  - I risultati stanno in una `DiagnosticCollection` loro. **Aprire un manifest cancella la copia della scansione**: le diagnostics vive sono autorevoli, e senza quella cancellazione ogni finding comparirebbe due volte.
+  - Nuova impostazione `hlsLens.workspace.exclude` (default `**/node_modules/**`). La scansione rispetta `diagnostics.skip`, `diagnostics.minSeverity` e le due soglie, ed è annullabile.
+
+### Corretto
+
+- **Le milestone orfane su GitHub sono state cancellate** (dodici, lasciate indietro dalle rinomine delle sezioni). Il tracker ora è esattamente lo specchio del `BACKLOG.md` e il sync non segnala più niente.
+
 ## [0.13.0] - 2026-08-18
 
 I gruppi di rendition: `EXT-X-MEDIA` letto da entrambi i lati. 73 → **81 regole**.
@@ -274,6 +290,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.14.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.14.0
 [0.13.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.13.0
 [0.12.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.12.0
 [0.11.1]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.11.1

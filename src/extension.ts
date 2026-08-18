@@ -17,6 +17,7 @@ import { quickFixesFor } from './core/fixes';
 import { analyzeAcross, LoadedRendition } from './core/crosscheck';
 import { describeChange, diffPlaylists, watchIntervalMs } from './core/watch';
 import { analyzeMpd } from './core/dash';
+import { isManifestPath, renderWorkspaceReport, summariseWorkspace, WorkspaceEntry } from './core/workspace';
 import { buildTimeline, renderTimelineHtml, TimelineTrack } from './core/timeline';
 import { isRemote, looksLikePlaylistUri, resolveUri } from './core/uri';
 
@@ -29,6 +30,7 @@ const fetched = new Map<string, string>();
 let diagnostics: vscode.DiagnosticCollection;
 let deepDiagnostics: vscode.DiagnosticCollection;
 let crossDiagnostics: vscode.DiagnosticCollection;
+let workspaceDiagnostics: vscode.DiagnosticCollection;
 let output: vscode.OutputChannel;
 let statusBar: vscode.StatusBarItem;
 let tree: ManifestTreeProvider;
@@ -39,6 +41,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // Its own collection, like segcheck's: these findings cost a round of network or disk
   // reads, and the manifest collection is rewritten on every keystroke.
   crossDiagnostics = vscode.languages.createDiagnosticCollection('hls-lens-cross');
+  workspaceDiagnostics = vscode.languages.createDiagnosticCollection('hls-lens-workspace');
   output = vscode.window.createOutputChannel('HLS Lens');
   statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   tree = new ManifestTreeProvider();
@@ -47,6 +50,7 @@ export function activate(context: vscode.ExtensionContext): void {
     diagnostics,
     deepDiagnostics,
     crossDiagnostics,
+    workspaceDiagnostics,
     output,
     statusBar,
     vscode.window.registerTreeDataProvider('hlsLens.explorer', tree),
@@ -107,6 +111,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('hlsLens.deepCheckVariant', (node?: TreeNode) => deepCheckVariant(node)),
     vscode.commands.registerCommand('hlsLens.watch', () => toggleWatch()),
     vscode.commands.registerCommand('hlsLens.showTimeline', () => showTimeline()),
+    vscode.commands.registerCommand('hlsLens.checkWorkspace', () => checkWorkspace()),
   );
 
   for (const doc of vscode.workspace.textDocuments) updateDiagnostics(doc);
@@ -162,6 +167,10 @@ function updateDiagnostics(doc: vscode.TextDocument): void {
     diagnostics.delete(doc.uri);
     return;
   }
+  // Once a manifest is open its own diagnostics are live and authoritative: drop
+  // whatever the workspace scan left on it, or the Problems panel shows each finding
+  // twice.
+  workspaceDiagnostics.delete(doc.uri);
   const playlist = parsePlaylist(doc.getText());
   const findings = analyze(playlist, {
     pdtDriftToleranceMs: config.get<number>('pdtDriftToleranceMs', 500),
@@ -760,6 +769,95 @@ async function checkTogether(): Promise<void> {
       ? `HLS Lens: ${loaded.length} renditions agree${skipped}.`
       : `HLS Lens: ${kept.length} finding(s) across ${loaded.length} renditions${skipped}.`,
   );
+}
+
+/** Manifests one scan will read before it stops and says so. */
+const MAX_MANIFESTS = 2000;
+
+/**
+ * HL-31: every manifest in the workspace, not just the open one.
+ *
+ * The extension activates on the workspaceContains glob for m3u8 files and then waits for someone
+ * to click a file — but the manifest with the defect is usually the one nobody
+ * thought to open. This reads them all into their own diagnostic collection, so the
+ * Problems panel lists files that were never loaded.
+ */
+async function checkWorkspace(): Promise<void> {
+  if (!vscode.workspace.workspaceFolders?.length) {
+    void vscode.window.showWarningMessage('HLS Lens: open a folder first — there is no workspace to scan.');
+    return;
+  }
+
+  const config = vscode.workspace.getConfiguration('hlsLens');
+  const exclude = config.get<string>('workspace.exclude', '**/node_modules/**');
+  const uris = await vscode.workspace.findFiles('**/*.{m3u8,m3u,mpd}', exclude || null, MAX_MANIFESTS);
+  if (uris.length === 0) {
+    void vscode.window.showInformationMessage('HLS Lens: no manifests found in this workspace.');
+    return;
+  }
+
+  const skip = config.get<string[]>('diagnostics.skip', []);
+  const floor = config.get<Severity>('diagnostics.minSeverity', 'hint');
+  const rank: Record<Severity, number> = { error: 0, warning: 1, hint: 2 };
+  const entries: WorkspaceEntry[] = [];
+  workspaceDiagnostics.clear();
+
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: 'HLS Lens: reading the manifests', cancellable: true },
+    async (progress, token) => {
+      for (const [index, uri] of uris.entries()) {
+        if (token.isCancellationRequested) return;
+        const path = vscode.workspace.asRelativePath(uri);
+        progress.report({ message: `${index + 1}/${uris.length} ${path}`, increment: 100 / uris.length });
+        if (!isManifestPath(uri.path)) continue;
+        let text: string;
+        try {
+          text = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8');
+        } catch (err) {
+          output.appendLine(`could not read ${path}: ${err instanceof Error ? err.message : String(err)}`);
+          continue;
+        }
+
+        const findings = (
+          uri.path.toLowerCase().endsWith('.mpd')
+            ? analyzeMpd(text).filter((f) => !skip.includes(f.rule) && !skip.includes(f.rule.split('/')[0]))
+            : analyze(parsePlaylist(text), {
+                pdtDriftToleranceMs: config.get<number>('pdtDriftToleranceMs', 500),
+                targetDurationSlack: config.get<number>('targetDurationSlack', 1.5),
+                skip,
+              })
+        ).filter((f) => rank[f.severity] <= rank[floor]);
+
+        entries.push({ path, findings });
+        // The document is not open, so the ranges come from the text that was read.
+        const lines = text.split('\n').map((l) => (l.endsWith('\r') ? l.slice(0, -1) : l));
+        if (findings.length > 0) workspaceDiagnostics.set(uri, findings.map((f) => toDiagnosticAt(lines, f)));
+      }
+    },
+  );
+
+  const summary = summariseWorkspace(entries);
+  output.appendLine('');
+  for (const line of renderWorkspaceReport(summary)) output.appendLine(line);
+  if (uris.length === MAX_MANIFESTS) {
+    output.appendLine(`  (stopped at ${MAX_MANIFESTS} manifests: narrow the workspace, or set hlsLens.workspace.exclude)`);
+  }
+  output.show(true);
+
+  const headline = renderWorkspaceReport(summary)[0];
+  void vscode.window.showInformationMessage(`HLS Lens: ${headline}`);
+}
+
+/** A diagnostic for a file that is not open, so there is no TextDocument to measure. */
+function toDiagnosticAt(lines: string[], finding: Finding): vscode.Diagnostic {
+  const index = Math.min(finding.line, Math.max(lines.length - 1, 0));
+  const text = lines[index] ?? '';
+  const range = text.trim().length > 0 ? new vscode.Range(index, 0, index, text.length) : new vscode.Range(index, 0, index, 1);
+  const message = finding.hint ? `${finding.message}\n\u2192 ${finding.hint}` : finding.message;
+  const diagnostic = new vscode.Diagnostic(range, message, severityToVsCode(finding.severity));
+  diagnostic.source = 'hls-lens';
+  diagnostic.code = finding.rule;
+  return diagnostic;
 }
 
 /** HL-12: the segments as a strip, and the renditions stacked on one axis. */
