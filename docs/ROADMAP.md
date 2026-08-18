@@ -6,7 +6,7 @@ Where HLS Lens is going. This page is a projection of [BACKLOG.md](../BACKLOG.md
 single source of truth: every item has a stable id (`HL-n`) and is mirrored as a GitHub issue by
 the `backlog-sync` workflow, so the file, this page and the issue tracker cannot drift apart.
 
-**39 of 39 items done** · `██████████` 100%
+**39 of 43 items done** · `█████████░` 91%
 
 | Milestone | State | Done |
 |---|---|---|
@@ -30,6 +30,7 @@ the `backlog-sync` workflow, so the file, this page and the issue tracker cannot
 | [v0.16.0 — Grading and fixing](#v0160--grading-and-fixing) | ✅ shipped | 2/2 |
 | [v0.17.0 — Sending it to someone](#v0170--sending-it-to-someone) | ✅ shipped | 2/2 |
 | [v0.18.0 — Against another manifest](#v0180--against-another-manifest) | ✅ shipped | 2/2 |
+| [DASH, all the way](#dash-all-the-way) | ⏳ planned | 0/4 |
 
 ## v0.1.0 — Reading manifests
 
@@ -201,3 +202,14 @@ The Problems panel is where a defect is fixed, not where it is argued about with
 
 - [x] **HL-37 — Compare with another manifest**: `src/core/compare.ts` reports what the open manifest declares that another one did not — rungs added, removed or re-rated, rendition groups that came and went, and for a media playlist the version, the target duration, the segment count and an `EXT-X-ENDLIST` that arrived. **Rungs are matched by URI**: a packager keeps the path of a rendition stable far more often than its bitrate, so the URI is what tells "the same rung, re-rated" apart from "a new rung". A text diff answers the same question in a form nobody can read — a manifest is a set of declarations, and the interesting change is which declaration moved, not which line did.
 - [x] **HL-38 — House styles as a starting grade**: `hlsLens.diagnostics.profile` with `apple` (the HLS Authoring Specification: an I-frame playlist and a RESOLUTION stop being advisory) and `low-latency` (a stream sold as such owes the reports and the hold-backs). The catalogue has one opinion per rule and cannot have the right one for everybody — an I-frame playlist is advisory in RFC 8216 and required by Apple, and which you are held to depends on where the stream is going. A profile is a **starting point**: `diagnostics.severity` is applied on top, so a team can take the profile and still argue with one line of it.
+
+## DASH, all the way
+
+DASH has rules, a tree and a status bar, and stops there. Every feature added since v0.11.0 — the timeline, the comparison, the links, the hover — was built for HLS and quietly does nothing, or the wrong thing, for an `.mpd`.
+
+⏳ planned · 0 of 4 · `░░░░░░░░░░`
+
+- [ ] **HL-39 — Compare two MPDs**: `compareManifests` today answers `the two manifests declare the same thing` for two completely different MPDs. It is not reachable from the UI — `Compare With…` refuses to run unless a playlist is open — but the core is one caller away from a **silently wrong answer**, which is worse than an error. Two parts: make an unknown/unknown pair say it cannot compare them, and then actually compare them (periods, adaptation sets, representations, `@mediaPresentationDuration`).
+- [ ] **HL-40 — The timeline for an MPD**: `buildTimeline` takes parsed playlists, so a DASH manifest gets no strip at all. A `<SegmentTimeline>` is exactly the shape the timeline was built to draw — `<S>` elements with `@d` and `@r` are segments with durations — and the periods are the discontinuities.
+- [ ] **HL-41 — Document links and hover in an MPD**: `BaseURL`, `UTCTiming@value` and `@initialization` are the URLs an operator wants to follow, and `$Number$`/`$Time$` templates are worth showing resolved for the first segment. The hover needs a DASH vocabulary in `spec.ts` the way HLS has one — the elements and attributes with what they mean and what values they take.
+- [ ] **HL-42 — Cross-period `dash/*` rules**: the DASH equivalent of the `cross/*` category. A representation whose `@codecs` or `@height` changes between periods forces a decoder reset mid-presentation; a period missing an adaptation set the others have loses that track at the boundary; `@presentationTimeOffset` that does not chain leaves a gap no single period shows.
