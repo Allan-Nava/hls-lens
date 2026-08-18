@@ -142,3 +142,11 @@ Rule ids are the API a team pins, and "off" was the only thing it could say.
 
 - [x] **HL-33 — Re-grade a rule instead of switching it off**: `applySeverityOverrides` and the `hlsLens.diagnostics.severity` setting take a rule id or a whole category and give it another severity, or `off`. The more specific setting wins, the findings are re-sorted afterwards (a rule promoted to error and left at the bottom of the panel would be worse than not promoting it), and a value that is not a severity is **left alone** — that is a typo in a settings file, and both dropping the rule and guessing at the intent would hide it.
 - [x] **HL-34 — Three more quick fixes**: a misspelled tag offered the tag it was meant to be (Levenshtein against the parser's own vocabulary, never further than two edits — beyond that it is a vendor extension, not a typo), `AUTOSELECT=NO` on a default rendition set to `YES`, and a stray `FORCED` removed without leaving its comma behind.
+
+## v0.17.0 — Sending it to someone
+
+The Problems panel is where a defect is fixed, not where it is argued about with the
+team that produced the manifest.
+
+- [x] **HL-35 — Export the findings as a report**: `src/core/report.ts` renders the findings as markdown for a ticket or as JSON for whatever reads it next, from the open manifest or from the last workspace scan. The JSON carries a `schema` number, because anything parsing it is code somebody else wrote and needs something to pin. **Lines are 1-based in the export**: 0-based is an editor's convention, and a report is read by people and by CI, which both count from 1. Pipes in a message are escaped — a URI with one in it would otherwise end the table column early and shift every cell after it.
+- [x] **HL-36 — The low-latency vocabulary in the tree**: eleven rules read `EXT-X-PART`, `EXT-X-PRELOAD-HINT` and `EXT-X-RENDITION-REPORT`, and the tree showed none of them. `lowLatencyRows` adds a section with the server control (whether the parts buy any latency at all), the parts with their duration and their `INDEPENDENT`/`GAP` marks, the hint a player blocks on and the reports it switches rungs by. Capped at 50 parts — a live window holds hundreds — and the cap is **stated** in a row of its own.

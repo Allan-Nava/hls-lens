@@ -22,8 +22,9 @@ import { buildMpdTree, mpdSummary } from '../src/core/mpdtree';
 import { frontMatter, renderMarkdown, renderPage, pageTitle } from '../src/core/markdown';
 import { buildTimeline, niceTicks, renderTimelineHtml } from '../src/core/timeline';
 import { isManifestPath, summariseWorkspace, renderWorkspaceReport } from '../src/core/workspace';
+import { renderFindingsMarkdown, renderFindingsJson } from '../src/core/report';
 import { analyze, RULES, Finding, Severity, applySeverityOverrides } from '../src/core/analyze';
-import { buildLadder, renditionRows, ladderSummary, formatBandwidth, formatResolution } from '../src/core/ladder';
+import { buildLadder, renditionRows, ladderSummary, formatBandwidth, formatResolution, lowLatencyRows } from '../src/core/ladder';
 import { resolveUri, baseOf, isRemote, isPlainHttp, looksLikePlaylistUri } from '../src/core/uri';
 import { buildSegcheckArgs, parseSegcheckResult, segcheckToFindings, segcheckSummary } from '../src/core/segcheck';
 import { fetchText } from '../src/core/fetch';
@@ -1876,6 +1877,92 @@ async function main(): Promise<void> {
   await test('a file that is not an MPD has no tree and says so', () => {
     assert.deepStrictEqual(buildMpdTree('<html><body>404</body></html>'), []);
     assert.strictEqual(mpdSummary('<html><body>404</body></html>'), 'not a DASH manifest');
+  });
+
+  // -------------------------------------------------------- low latency in the tree
+  await test('the low-latency vocabulary has rows of its own', () => {
+    const text = llPlaylist(
+      '#EXT-X-PART:DURATION=0.500,URI="s10.0.m4s",INDEPENDENT=YES',
+      '#EXT-X-PART:DURATION=0.500,URI="s10.1.m4s",GAP=YES',
+      '#EXTINF:4.000,',
+      's10.m4s',
+      '#EXT-X-PRELOAD-HINT:TYPE=PART,URI="s11.0.m4s"',
+      '#EXT-X-RENDITION-REPORT:URI="../720p/live.m3u8",LAST-MSN=10,LAST-PART=1',
+    );
+    const pl = parsePlaylist(text);
+    const rows = lowLatencyRows(pl);
+    assert.deepStrictEqual(
+      rows.map((r) => r.kind),
+      ['server-control', 'part', 'part', 'preload-hint', 'rendition-report'],
+    );
+
+    // The server control row is the one that says whether the parts buy anything.
+    assert.ok(rows[0].description.includes('blocking reload'), rows[0].description);
+    assert.ok(rows[0].description.includes('part target 0.5s'), rows[0].description);
+
+    assert.strictEqual(rows[1].label, 's10.0.m4s');
+    assert.ok(rows[1].description.includes('0.5s'), rows[1].description);
+    assert.ok(rows[1].description.includes('independent'), rows[1].description);
+    assert.ok(rows[2].description.includes('GAP'), rows[2].description);
+    assert.ok(pl.lines[rows[2].line].includes('s10.1.m4s'));
+
+    assert.ok(rows[3].label.includes('s11.0.m4s'), rows[3].label);
+    assert.ok(rows[4].description.includes('10'), rows[4].description);
+  });
+
+  await test('a playlist with no parts has no low-latency rows at all', () => {
+    const plain = '#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:6\n#EXTINF:6.000,\na.ts\n#EXT-X-ENDLIST\n';
+    assert.deepStrictEqual(lowLatencyRows(parsePlaylist(plain)), []);
+  });
+
+  await test('the parts listed are capped, and the cap is stated', () => {
+    const parts = Array.from({ length: 60 }, (_unused, i) => `#EXT-X-PART:DURATION=0.500,URI="s10.${i}.m4s"`);
+    const rows = lowLatencyRows(parsePlaylist(llPlaylist(...parts, '#EXTINF:4.000,', 's10.m4s')), { maxParts: 5 });
+    assert.strictEqual(rows.filter((r) => r.kind === 'part').length, 5);
+    const note = rows.find((r) => r.kind === 'note');
+    assert.ok(note && note.label.includes('55 more'), JSON.stringify(note));
+  });
+
+  // -------------------------------------------------------------------- report
+  const REPORT_ENTRIES = [
+    {
+      path: 'live/master.m3u8',
+      findings: [
+        { rule: 'master/missing-bandwidth', severity: 'error' as Severity, line: 4, message: 'the variant "a|b.m3u8" declares no BANDWIDTH', hint: 'add BANDWIDTH' },
+        { rule: 'master/ladder-spacing', severity: 'hint' as Severity, line: 9, message: 'rungs are 1.1x apart' },
+      ],
+    },
+    { path: 'live/audio.m3u8', findings: [] },
+  ];
+
+  await test('the markdown report survives a message with a pipe in it', () => {
+    const markdown = renderFindingsMarkdown(REPORT_ENTRIES, { title: 'nightly' });
+    assert.ok(markdown.startsWith('# nightly'), markdown.slice(0, 40));
+    assert.ok(markdown.includes('2 manifests checked'), markdown);
+    // A URI with a pipe in it would otherwise split the row into two columns.
+    assert.ok(markdown.includes('a\\|b.m3u8'), markdown);
+    assert.ok(markdown.includes('| 5 |'), 'lines are 1-based outside the editor');
+    assert.ok(markdown.includes('master/ladder-spacing'));
+    assert.strictEqual(markdown, renderFindingsMarkdown(REPORT_ENTRIES, { title: 'nightly' }));
+  });
+
+  await test('the JSON report is a stable, pinned shape', () => {
+    const parsed = JSON.parse(renderFindingsJson(REPORT_ENTRIES));
+    assert.strictEqual(parsed.tool, 'hls-lens');
+    assert.strictEqual(parsed.schema, 1);
+    assert.deepStrictEqual(parsed.summary, { files: 2, clean: 1, errors: 1, warnings: 0, hints: 1 });
+    assert.strictEqual(parsed.files.length, 1, 'a clean manifest carries no findings to report');
+    assert.strictEqual(parsed.files[0].path, 'live/master.m3u8');
+    // 0-based lines are an editor detail; everything that reads this counts from 1.
+    assert.strictEqual(parsed.files[0].findings[0].line, 5);
+    assert.strictEqual(parsed.files[0].findings[0].hint, 'add BANDWIDTH');
+    assert.ok(!('hint' in parsed.files[0].findings[1]), 'a finding with no hint carries no empty one');
+  });
+
+  await test('a report with nothing in it says so rather than printing an empty table', () => {
+    const markdown = renderFindingsMarkdown([{ path: 'a.m3u8', findings: [] }], { title: 'clean' });
+    assert.ok(/nothing to report/i.test(markdown), markdown);
+    assert.ok(!markdown.includes('|'), 'no table for no rows');
   });
 
   // ----------------------------------------------------------------- workspace

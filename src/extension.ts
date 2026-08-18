@@ -8,7 +8,7 @@ import { spawn } from 'child_process';
 import { randomBytes } from 'crypto';
 
 import { analyze, applySeverityOverrides, Finding, RULES, Severity } from './core/analyze';
-import { buildLadder, LadderRow, ladderSummary, renditionRows } from './core/ladder';
+import { buildLadder, LadderRow, ladderSummary, lowLatencyRows, renditionRows } from './core/ladder';
 import { parsePlaylist, Playlist, looksLikePlaylist } from './core/playlist';
 import { buildSegcheckArgs, parseSegcheckResult, segcheckSummary, segcheckToFindings } from './core/segcheck';
 import { fetchText } from './core/fetch';
@@ -19,6 +19,7 @@ import { describeChange, diffPlaylists, watchIntervalMs } from './core/watch';
 import { analyzeMpd } from './core/dash';
 import { buildMpdTree, mpdSummary, MpdRow } from './core/mpdtree';
 import { isManifestPath, renderWorkspaceReport, summariseWorkspace, WorkspaceEntry } from './core/workspace';
+import { renderFindingsJson, renderFindingsMarkdown } from './core/report';
 import { buildTimeline, renderTimelineHtml, TimelineTrack } from './core/timeline';
 import { isRemote, looksLikePlaylistUri, resolveUri } from './core/uri';
 
@@ -114,6 +115,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('hlsLens.watch', () => toggleWatch()),
     vscode.commands.registerCommand('hlsLens.showTimeline', () => showTimeline()),
     vscode.commands.registerCommand('hlsLens.checkWorkspace', () => checkWorkspace()),
+    vscode.commands.registerCommand('hlsLens.exportReport', () => exportReport()),
   );
 
   for (const doc of vscode.workspace.textDocuments) updateDiagnostics(doc);
@@ -390,6 +392,29 @@ function buildTree(active: ActiveManifest): TreeNode[] {
       children.push(node);
     }
     nodes.push(section(`Init & keys (${children.length})`, 'key', children));
+  }
+
+  const lowLatency = lowLatencyRows(playlist);
+  if (lowLatency.length > 0) {
+    const icons: Record<string, string> = {
+      'server-control': 'settings',
+      part: 'symbol-ruler',
+      'preload-hint': 'rocket',
+      'rendition-report': 'broadcast',
+      note: 'ellipsis',
+    };
+    nodes.push(
+      section(
+        `Low latency (${playlist.parts.length} parts)`,
+        'zap',
+        lowLatency.map((row) => {
+          const node = new TreeNode(row.label, 'row', vscode.TreeItemCollapsibleState.None, [], '', row.line >= 0 ? row.line : undefined);
+          node.description = row.description;
+          node.iconPath = new vscode.ThemeIcon(icons[row.kind] ?? 'circle-small');
+          return node;
+        }),
+      ),
+    );
   }
 
   if (findings.length > 0) nodes.push(problemsSection(findings));
@@ -840,6 +865,55 @@ async function checkTogether(): Promise<void> {
   );
 }
 
+/** The entries of the last workspace scan, so a report can be made of them. */
+let lastScan: WorkspaceEntry[] | undefined;
+
+/**
+ * HL-35: the findings as a file you can send someone.
+ *
+ * The Problems panel is where a defect is fixed. It is not where a defect is argued
+ * about with the team that produced the manifest, and a screenshot of an editor is a
+ * poor attachment to a ticket.
+ */
+async function exportReport(): Promise<void> {
+  const active = activeManifest();
+  const mpd = activeMpdDocument();
+  const sources: Array<vscode.QuickPickItem & { entries: WorkspaceEntry[] }> = [];
+  if (active) {
+    sources.push({ label: 'This manifest', description: nameOf(active.location), entries: [{ path: active.location, findings: active.findings }] });
+  } else if (mpd) {
+    const config = vscode.workspace.getConfiguration('hlsLens');
+    const skip = config.get<string[]>('diagnostics.skip', []);
+    const findings = graded(analyzeMpd(mpd.getText()).filter((f) => !skip.includes(f.rule) && !skip.includes(f.rule.split('/')[0])));
+    sources.push({ label: 'This manifest', description: nameOf(locationOf(mpd)), entries: [{ path: locationOf(mpd), findings }] });
+  }
+  if (lastScan) {
+    sources.push({ label: 'The last workspace scan', description: `${lastScan.length} manifests`, entries: lastScan });
+  }
+  if (sources.length === 0) {
+    void vscode.window.showWarningMessage('HLS Lens: open a manifest, or run the workspace scan first.');
+    return;
+  }
+
+  const source = sources.length === 1 ? sources[0] : await vscode.window.showQuickPick(sources, { title: 'HLS Lens: what to report on' });
+  if (!source) return;
+  const format = await vscode.window.showQuickPick(
+    [
+      { label: 'Markdown', description: 'for a ticket or a pull request', value: 'md' as const },
+      { label: 'JSON', description: 'for whatever reads it next', value: 'json' as const },
+    ],
+    { title: 'HLS Lens: report format' },
+  );
+  if (!format) return;
+
+  // The timestamp is passed in rather than taken in the core, which has to stay
+  // deterministic to be testable.
+  const options = { title: 'HLS Lens report', subtitle: `${source.label} · ${new Date().toISOString()}` };
+  const content = format.value === 'md' ? renderFindingsMarkdown(source.entries, options) : renderFindingsJson(source.entries, options);
+  const doc = await vscode.workspace.openTextDocument({ content, language: format.value === 'md' ? 'markdown' : 'json' });
+  await vscode.window.showTextDocument(doc, { preview: false });
+}
+
 /** Manifests one scan will read before it stops and says so. */
 const MAX_MANIFESTS = 2000;
 
@@ -905,6 +979,7 @@ async function checkWorkspace(): Promise<void> {
     },
   );
 
+  lastScan = entries;
   const summary = summariseWorkspace(entries);
   output.appendLine('');
   for (const line of renderWorkspaceReport(summary)) output.appendLine(line);

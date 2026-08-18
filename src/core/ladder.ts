@@ -3,7 +3,7 @@
 //
 // Pure model, no vscode types, so the shape of the tree is testable.
 import { Playlist } from './playlist';
-import { Resolution } from './attrs';
+import { attrFloat, Resolution } from './attrs';
 
 /** One row of the tree: a variant stream or an alternate rendition. */
 export interface LadderRow {
@@ -155,4 +155,103 @@ export function ladderSummary(pl: Playlist): string {
     return parts.join(' · ');
   }
   return 'not an HLS playlist';
+}
+
+/** One row of the low-latency section of the tree. */
+export interface LowLatencyRow {
+  kind: 'server-control' | 'part' | 'preload-hint' | 'rendition-report' | 'note';
+  label: string;
+  description: string;
+  /** 0-based line index to reveal, or -1 for a row that is not in the file. */
+  line: number;
+}
+
+/** Options for one low-latency listing. */
+export interface LowLatencyOptions {
+  /** Parts listed before the row that says how many were left out. */
+  maxParts?: number;
+}
+
+/** A live window holds hundreds of parts; a tree that lists them all is unusable. */
+const MAX_PARTS = 50;
+
+/**
+ * lowLatencyRows is the half of a low-latency playlist the tree used to ignore.
+ *
+ * Eleven rules read this vocabulary and the tree showed none of it: the parts, the
+ * hint a player is meant to block on, and the reports it switches rungs by. A
+ * playlist with no parts has nothing here and gets no section at all.
+ */
+export function lowLatencyRows(pl: Playlist, options: LowLatencyOptions = {}): LowLatencyRow[] {
+  if (pl.parts.length === 0 && pl.partTarget === null && pl.preloadHints.length === 0 && pl.renditionReports.length === 0) {
+    return [];
+  }
+  const limit = options.maxParts ?? MAX_PARTS;
+  const rows: LowLatencyRow[] = [];
+
+  const control = pl.serverControl;
+  if (control || pl.partTarget !== null) {
+    const canBlock = (control?.get('CAN-BLOCK-RELOAD') ?? '').toUpperCase() === 'YES';
+    const holdBack = control ? attrFloat(control, 'PART-HOLD-BACK') : null;
+    rows.push({
+      kind: 'server-control',
+      label: 'Server control',
+      // Whether the parts buy any latency at all is this row's whole job.
+      description: [
+        canBlock ? 'blocking reload' : 'no blocking reload',
+        pl.partTarget !== null ? `part target ${pl.partTarget}s` : '',
+        holdBack !== null ? `hold back ${holdBack}s` : '',
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      line: pl.serverControlLine ?? pl.partInfLine ?? -1,
+    });
+  }
+
+  for (const part of pl.parts.slice(0, limit)) {
+    rows.push({
+      kind: 'part',
+      label: part.uri || `line ${part.line + 1}`,
+      description: [
+        part.duration === null ? 'no DURATION' : `${part.duration}s`,
+        part.independent ? 'independent' : '',
+        part.gap ? 'GAP' : '',
+        part.byterange ? `bytes ${part.byterange}` : '',
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      line: part.line,
+    });
+  }
+  if (pl.parts.length > limit) {
+    rows.push({
+      kind: 'note',
+      label: `… and ${pl.parts.length - limit} more parts`,
+      description: 'a live window holds hundreds; the rest are in the manifest',
+      line: -1,
+    });
+  }
+
+  for (const hint of pl.preloadHints) {
+    rows.push({
+      kind: 'preload-hint',
+      label: `Preload ${hint.attrs.get('TYPE') ?? '?'}: ${hint.attrs.get('URI') ?? 'no URI'}`,
+      description: 'requested before it exists',
+      line: hint.line,
+    });
+  }
+
+  for (const report of pl.renditionReports) {
+    const lastPart = report.attrs.get('LAST-PART');
+    rows.push({
+      kind: 'rendition-report',
+      label: report.attrs.get('URI') ?? 'no URI',
+      description: [`last MSN ${report.attrs.get('LAST-MSN') ?? '—'}`, lastPart !== undefined ? `part ${lastPart}` : '']
+        .filter(Boolean)
+        .join(' · '),
+      line: report.line,
+    });
+  }
+
+  return rows;
 }

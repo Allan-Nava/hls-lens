@@ -23,6 +23,7 @@ The **HLS** view in the activity bar shows the manifest as it is structured:
 | Renditions | Alternate audio, subtitles and captions, with their group, language and default flag |
 | Segments | Duration, URI and the DISCONTINUITY / GAP / BYTERANGE marks (first 50 — a live playlist has thousands) |
 | Init & keys | `EXT-X-MAP` and every `EXT-X-KEY`, with its method and URI |
+| Low latency | The server control (whether the parts buy any latency at all), the parts with their `INDEPENDENT`/`GAP` marks, the preload hint and the rendition reports — first 50 parts, and it says so |
 | Problems | Every finding, worst first, with the line |
 
 Clicking a row reveals its line in the manifest. Variant and rendition rows have two inline actions: **open the child playlist** (in the editor when it is a file, fetched when it is remote) and **copy the resolved URI**.
@@ -84,6 +85,19 @@ Seven findings come with a quick fix (the lightbulb, or `⌘.`):
 | `master/rendition-forced` | Remove `FORCED` |
 
 Nothing else is offered a fix. A missing `CODECS` string, a badly spaced ladder or a key served over plaintext HTTP all need a decision that an editor command has no business making.
+
+## Sending the findings to someone
+
+**HLS Lens: Export Findings as a Report** turns what was found into a document: markdown to paste
+into a ticket, or JSON for whatever reads it next. It reports on the open manifest, or on the last
+workspace scan if one has been run.
+
+Two things about the export that differ from the editor:
+
+- **Lines are 1-based.** 0-based is an editor's convention and this core's everywhere else; a report
+  is read by people and by CI, and both count from 1.
+- **The JSON carries a `schema` number.** Anything that parses it is code somebody else wrote, and
+  it needs something to pin. Clean manifests are counted in the summary and left out of `files`.
 
 ## Checking the whole workspace
 

@@ -3,6 +3,19 @@
 Tutte le modifiche rilevanti a questa estensione sono documentate qui.
 Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/) e il progetto usa il [Semantic Versioning](https://semver.org/lang/it/).
 
+## [0.17.0] - 2026-08-18
+
+Il pannello Problems è dove un difetto si corregge, non dove lo si discute con chi ha prodotto il manifest.
+
+### Aggiunto
+
+- **`HLS Lens: Export Findings as a Report`** (`src/core/report.ts`): i finding come markdown da incollare in un ticket o come JSON per chi lo legge dopo — del manifest aperto, o dell'ultima scansione del workspace. Uno screenshot dell'editor è un pessimo allegato.
+  - **Le righe sono 1-based nell'export.** Lo 0-based è la convenzione di un editor, ed è quella del core ovunque; un report lo leggono persone e CI, e contano entrambe da 1.
+  - Il JSON porta un campo **`schema`**: chi lo parsa è codice scritto da qualcun altro e gli serve qualcosa a cui ancorarsi. I manifest puliti stanno nel sommario e non nell'elenco.
+  - **Le pipe nei messaggi sono escapate**: un URI con dentro una `|` chiuderebbe la colonna in anticipo e sposterebbe ogni cella dopo di sé. C'è il test.
+  - Nessun timestamp dentro il core, che deve restare deterministico per essere testabile: lo passa la glue.
+- **Il vocabolario low latency nell'albero**: undici regole leggono `EXT-X-PART`, `EXT-X-PRELOAD-HINT` e `EXT-X-RENDITION-REPORT`, e l'albero non ne mostrava nessuno. Ora c'è una sezione con il server control (cioè: se quelle parti comprano latenza o no), le parti con durata e marche `INDEPENDENT`/`GAP`, l'hint su cui il player si blocca e i report con cui switcha rung. Tronca a 50 parti — una finestra live ne ha centinaia — e **lo dice** in una riga sua.
+
 ## [0.16.0] - 2026-08-18
 
 Gli id delle regole sono l'API che un team fissa, e finora quell'API sapeva dire solo "spegnila".
@@ -317,6 +330,7 @@ Prima release: leggere un manifest HLS dentro VS Code, con il manifest che dice 
 - **Icona generata** (`npm run icon`): `media/icon.png` disegnato da primitive con un encoder PNG scritto sopra `zlib` — il Marketplace vuole un PNG, e rasterizzare un SVG richiederebbe un browser o una libreria nativa in un'estensione che altrimenti ha zero dipendenze.
 - **`docs/RULES.md` generato** dal catalogo compilato (`npm run docs`), con gate in CI che la rigenerazione sia un no-op: il riferimento non può descrivere regole che l'estensione non ha.
 
+[0.17.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.17.0
 [0.16.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.16.0
 [0.15.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.15.0
 [0.14.0]: https://github.com/Allan-Nava/hls-lens/releases/tag/v0.14.0
